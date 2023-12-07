@@ -26,6 +26,7 @@ class HMat
 public:
 	HMat(string L, vector<string> Samples, vector<string> Features);
 	~HMat(){}
+	void setDelims(options* opts) { funcHAnnoAND = opts->funcHAnnoAND; funcAnnoOR = opts->funcAnnoOR; }
 	//get
 	//unsigned long operator [](int i) const    { return registers[i]; }
 	//add single matrix entry (v) to at position j to hierachy level kk
@@ -45,6 +46,8 @@ private:
 	vector<vector<uint>> catCnt;
 	vector<uint> maxCatCnt;
 	uint hiTaNAcnt;
+	string funcHAnnoAND; // = ","  #in sumMat, denotes annotations that should be merged (summed across genes)
+	string funcAnnoOR; // = "|"  #in sumMat, denotes annotations that are equal but undecided (averaged across genes)
 };
 
 class SparseMatrix
@@ -225,7 +228,7 @@ protected:
 	void readColNms(istream* in, const char sep);
 	int iniCols(istream* in, const char sep);
 	void read_subset_genes(const string);
-	void read_hierachy(const string , bool);
+	void read_hierachy(const string, options*);// bool);
 	void addColumn(string);
 	vector<mat_fl> getRow(uint idx);
 	//merge two rows in matrix, into first entry, setting subsequent rows to 0

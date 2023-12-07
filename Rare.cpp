@@ -4,7 +4,8 @@
 //2.01: 4.4.23: changed output for gene matrix calc
 //2.07: 26.9.23: (-v) version print
 //2.08: parallelized clstr2mat output, more error tolerant
-const char* rar_ver="2.08";
+//2.09: 7.12.23: added new delim flags for functions (funcHAnnoAND ..)
+const char* rar_ver="2.09";
 
 
 rareStruct* calcDivRar(int i, Matrix* Mo, DivEsts* div, options* opts,
@@ -161,7 +162,8 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 	modDB(""), modRedund(5), modEnzCompl(0.5f), modModCompl(0.5f), modWrXtraInfo(false),
 	modCollapse(false), calcCoverage(false), calcCovMedian(false), mean(false),
 	median(false), check4idxMatch(false), gzOut(false), header(true),
-	modDescr(""), modHiera(""), xtra("") {
+	modDescr(""), modHiera(""), xtra(""),
+	funcHieraSep("|" ), funcHAnnoAND(","), funcAnnoOR(";") {
 
 
         bool hasErr = false;
@@ -254,10 +256,17 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 			else if (!strcmp(argv[i], "-hiera")) // hierachy for modules
 				modHiera = (argv[++i]);
 			else if (!strcmp(argv[i], "-xtra"))
-                xtra = (argv[++i]);
-
-
-
+				xtra = (argv[++i]);
+			else if (!strcmp(argv[i], "-funcHieraSep")) { // |
+				funcHieraSep = argv[++i];
+				//funcHieraSep = (tmp.c_str());
+			}else if (!strcmp(argv[i], "-funcHAnnoAND")) {// ,
+				funcHAnnoAND = argv[++i];
+				//funcHAnnoAND = char(tmp.c_str());
+			}else if (!strcmp(argv[i], "-funcAnnoOR")) { // ;
+				funcAnnoOR = argv[++i];
+				//funcAnnoOR = char(tmp.c_str());
+			}
         }
 
 		if (calcCovMedian && calcCoverage) {

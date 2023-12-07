@@ -893,7 +893,7 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 	//reads matrix from HDD
 	//and writes it simultaneously to single files
 	if (doHigh){
-		read_hierachy(xtra,opts->extendHierachy);
+		read_hierachy(xtra,opts);
 	} else if (xtra.length() > 2){
 		read_subset_genes(xtra);
 	}
@@ -933,6 +933,9 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 			//set up empty higher level hierachies
 			HI.push_back(new HMat(LvlNms[i], colIDs, vector<string>(0)));
 		}
+	}
+	for (int i = 0; i < maxLvl; i++) {
+		HI[i]->setDelims(opts);
 	}
 	//set up tmp empty files
 	if (!doHigh && writeTmpFiles) {
@@ -1080,7 +1083,7 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	//reads matrix from HDD
 	//into mem.. careful with big files!
 	if (doHigh){
-		read_hierachy(xtra,opts->extendHierachy);
+		read_hierachy(xtra,opts);
 	}
 	else if (xtra.length() > 2){
 		read_subset_genes(xtra);
@@ -1129,6 +1132,9 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 		for (int i = 0; i < maxLvl; i++){
 			HI.push_back(new HMat(LvlNms[i], colIDs, vector<string>(0)));
 		}
+	}
+	for (int i = 0; i < maxLvl; i++) {
+		HI[i]->setDelims(opts);
 	}
 	int geneCnt(0);
 	//vector<mat_fl> emptyVec(ini_ColPerRow, (mat_fl)0);
@@ -1437,9 +1443,9 @@ void Matrix::prepCoex(options* opt) {
 void Matrix::complimentarity(vector<string>& cand, vector<float>& id, options* opt,
 	vector<vector<int>>& retI, vector<vector<string>>& retS, int& tcID, int& tcCE) {
 	vector<int> idx1(cand.size(),0);
-	if (coexcl_thr > 50) {
+	/*if (coexcl_thr > 50) {
 		coexcl_thr = 50;
-	}	else if (coexcl_thr < 4) { coexcl_thr = 4; }
+	}	else if (coexcl_thr < 4) { coexcl_thr = 4; }*/
 	for (uint i = 0; i < cand.size(); i++) {
 		//stoi(cand[i]);
 		auto idx = rowID_hash.find(cand[i]);
@@ -1486,6 +1492,7 @@ void Matrix::mergeRows(vector<int>& idx) {
 	}
 	int tar = idx[0];
 	if (sparse) {
+		cerr << "M";
 		for (uint j = 0; j < matSp.size(); j++) {//sample wise addition
 			auto fTar = matSp[j].find(tar);
 			auto Etake = matSp[j].end();
@@ -1504,8 +1511,8 @@ void Matrix::mergeRows(vector<int>& idx) {
 				}
 			}
 		}
-	}
-	else {
+		cerr << "R";
+	} else {
 		for (uint i = 1; i < idx.size(); i++) {
 			int take = idx[i];
 			lock_guard<mutex> lock(protect);
@@ -2126,8 +2133,10 @@ void Matrix::read_subset_genes(const string xtra){
 		#endif
 	}
 }
-void Matrix::read_hierachy(const string xtra, bool xtdHiera){
+void Matrix::read_hierachy(const string xtra, options* opts){// bool xtdHiera){
 	int maxHir = 9;
+	bool xtdHiera = opts->extendHierachy;
+	string funcHieraSep = opts->funcHieraSep;
 	vector<string> features;
 	string line;
 	ifstream in(xtra.c_str());
@@ -2155,11 +2164,11 @@ void Matrix::read_hierachy(const string xtra, bool xtdHiera){
 		int i = 0;
 		//string lngTax="";
 		string prevH = "";
-		while (getline(hir, spl, ';')){
+		while (getline(hir, spl, funcHieraSep[0])) {
 			//add previous levels
 			pseudo[i] = prevH+spl;
 			if (xtdHiera) {
-				prevH = pseudo[i] + ";";
+				prevH = pseudo[i] + funcHieraSep;
 			}
 			i++;
 			//lngTax += spl + ";";
@@ -2287,7 +2296,9 @@ void SparseMatrix::addCount(string smpl, int row, smat_fl abund) {
 
 
 HMat::HMat(string L, vector<string> Samples, vector<string> Features)
-:LvlName(L), FeatureNs(Features), SampleNs(Samples),mat(0), catCnt(0), maxCatCnt(0), hiTaNAcnt(0){
+:LvlName(L), FeatureNs(Features), SampleNs(Samples),mat(0), catCnt(0), maxCatCnt(0), hiTaNAcnt(0)
+, funcHAnnoAND(","), funcAnnoOR("|")
+{
 	empty = vector<mat_fl>(SampleNs.size(), 0);
 	mat.resize(FeatureNs.size(), empty);
 	catCnt.resize(FeatureNs.size(), vector<uint>(SampleNs.size(), 0));
@@ -2343,16 +2354,28 @@ void HMat::set(string& kk, vector<mat_fl>& v) {
 
 	mat_fl div(1);
 	//check if key is single key, or multiple keys (split by | )
-	size_t pos(kk.find("|", 0)), npos(0);
+	size_t pos(kk.find(funcAnnoOR, 0)), npos(0);
 	vector<string> subkk(0);
 	while (pos != string::npos) {
 		subkk.push_back(kk.substr(npos, pos - npos));
 		npos = pos + 1;
-		pos = kk.find("|", npos);
+		pos = kk.find(funcAnnoOR, npos);
 		div += 1.f;
 	}
-	div = 1/div;
-	subkk.push_back(kk.substr(npos));
+	if (div > 1.f){
+		div = 1.f / div;
+		subkk.push_back(kk.substr(npos));
+	} else {//only now check funcHAnnoAND
+		 size_t pos(kk.find(funcAnnoOR, 0)), npos(0);
+		 vector<string> subkk(0);
+		 while (pos != string::npos) {
+			 subkk.push_back(kk.substr(npos, pos - npos));
+			 npos = pos + 1;
+			 pos = kk.find(funcAnnoOR, npos);
+			 div += 1.f;
+		 }
+		 subkk.push_back(kk.substr(npos));
+	}
 
 	for (uint t = 0; t < subkk.size(); t++) {
 		string yy = subkk[t];

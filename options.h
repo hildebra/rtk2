@@ -53,7 +53,7 @@ typedef unordered_map <uint, uint> rare_map;
 typedef std::map<std::string, int> GeneIDidx;
 //contains gene ID, taxa
 //typedef robin_hood::map<std::string, vector<string>> LvlUp;
-typedef std::map<std::string, vector<string>> LvlUp;
+typedef robin_hood::unordered_map<std::string, vector<string>> LvlUp;
 typedef std::unordered_map<string, smat_fl>::iterator SmplAbunIT;
 typedef std::unordered_map<string, smat_fl> SmplAbun;
 typedef std::unordered_map<string, vector<int> >::iterator SmplOccurITmult;
@@ -69,39 +69,39 @@ struct options
 {
 public:
 	options(int argc, char** argv);
-//	options(std::string, std::string , int repeats, std::vector<double> depth, 
-//		int NoOfMatrices, 
-//		bool verbose, unsigned int threads);
+	//	options(std::string, std::string , int repeats, std::vector<double> depth, 
+	//		int NoOfMatrices, 
+	//		bool verbose, unsigned int threads);
 	void print_rare_details();
 	//~options();
 
 	//vars
-  std::string input = "";
-  std::string output = "";
-  std::string mode  = "";
-  std::string referenceDir = "";
-  std::string referenceFile = "";
-  std::string map = "";
-  std::vector<double> depth;
-  long depthMin;
-  char sepChar;
-  unsigned int repeats = 10;
-  unsigned int write = 0;
-  unsigned int threads = 1;
-  unsigned int occPerSmpl = 0;
-  unsigned int occMin = 0;
-  bool writeSwap = true;
-  bool verbose = false;
-  bool oldMapStyle = true;
-  bool sparse = true;
-  float pval = (float)1e-5;//for fisher test in decluter
+	std::string input = "";
+	std::string output = "";
+	std::string mode  = "";
+	std::string referenceDir = "";
+	std::string referenceFile = "";
+	std::string map = "";
+	std::vector<double> depth;
+	long depthMin;
+	char sepChar;
+	unsigned int repeats = 10;
+	unsigned int write = 0;
+	unsigned int threads = 1;
+	unsigned int occPerSmpl = 0;
+	unsigned int occMin = 0;
+	bool writeSwap = true;
+	bool verbose = false;
+	bool oldMapStyle = true;
+	bool sparse = true;
+	float pval = (float)1e-5;//for fisher test in decluter
 
-    std::string modDB;
-    int modRedund;
-    float modEnzCompl;
-    float modModCompl;
-    bool modWrXtraInfo;
-    bool modCollapse;
+	std::string modDB;
+	int modRedund;
+	float modEnzCompl;
+	float modModCompl;
+	bool modWrXtraInfo;
+	bool modCollapse;
 	bool calcCoverage;
 	bool calcCovMedian;
 	bool extendHierachy = false;
@@ -111,9 +111,12 @@ public:
 	bool gzOut;
 	bool header;
 
-  std::string modDescr;
-  std::string modHiera;
-  std::string xtra;
+	std::string modDescr;
+	std::string modHiera;
+	std::string xtra;
+	string funcHieraSep; // = ";" #in sumMat, denotes hierachical levels of annotation string
+	string funcHAnnoAND; // = ","  #in sumMat, denotes annotations that should be merged (summed across genes)
+	string funcAnnoOR; // = "|"  #in sumMat, denotes annotations that are equal but undecided (averaged across genes)
 };
 
 void cerr2(const std::string x, int ex = 0);
