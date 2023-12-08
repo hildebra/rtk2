@@ -163,7 +163,7 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 	modCollapse(false), calcCoverage(false), calcCovMedian(false), mean(false),
 	median(false), check4idxMatch(false), gzOut(false), header(true),
 	modDescr(""), modHiera(""), xtra(""),
-	funcHieraSep("|" ), funcHAnnoAND(","), funcAnnoOR(";") {
+	funcHieraSep(";" ), funcHAnnoAND(","), funcAnnoOR("|") {
 
 
         bool hasErr = false;

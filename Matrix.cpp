@@ -2366,7 +2366,8 @@ void HMat::set(string& kk, vector<mat_fl>& v) {
 		div = 1.f / div;
 		subkk.push_back(kk.substr(npos));
 	} else {//only now check funcHAnnoAND
-		 size_t pos(kk.find(funcAnnoOR, 0)), npos(0);
+		pos = kk.find(funcAnnoOR, 0);
+		npos=0;
 		 vector<string> subkk(0);
 		 while (pos != string::npos) {
 			 subkk.push_back(kk.substr(npos, pos - npos));
@@ -2375,6 +2376,9 @@ void HMat::set(string& kk, vector<mat_fl>& v) {
 			 div += 1.f;
 		 }
 		 subkk.push_back(kk.substr(npos));
+	}
+	if (subkk.size() == 0) {
+		subkk.push_back( kk);
 	}
 
 	for (uint t = 0; t < subkk.size(); t++) {
