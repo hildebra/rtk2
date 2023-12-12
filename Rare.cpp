@@ -163,7 +163,7 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 	modCollapse(false), calcCoverage(false), calcCovMedian(false), mean(false),
 	median(false), check4idxMatch(false), gzOut(false), header(true),
 	modDescr(""), modHiera(""), xtra(""),
-	funcHieraSep(";" ), funcHAnnoAND(","), funcAnnoOR("|") {
+	funcHieraSep(";" ), funcAnnoAND(","), funcAnnoOR("|") {
 
 
         bool hasErr = false;
@@ -261,7 +261,7 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 				funcHieraSep = argv[++i];
 				//funcHieraSep = (tmp.c_str());
 			}else if (!strcmp(argv[i], "-funcHAnnoAND")) {// ,
-				funcHAnnoAND = argv[++i];
+				funcAnnoAND = argv[++i];
 				//funcHAnnoAND = char(tmp.c_str());
 			}else if (!strcmp(argv[i], "-funcAnnoOR")) { // ;
 				funcAnnoOR = argv[++i];

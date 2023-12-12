@@ -631,7 +631,8 @@ void Modules::calcModAbund( vector<mat_fl>& v, const int pos, const unordered_ma
 //*********************************************************
 Matrix::Matrix(void)
 	:rowIDs(0), colIDs(0), maxCols(0), HI(0), maxLvl(0), sampleNameSep(""), 
-	doSubsets(false), doHigh(false),CoEx_minp(0),CoEx_thresh(0)
+	doSubsets(false), doHigh(false),CoEx_minp(0.f),CoEx_thresh(0.f), fet(nullptr), sparse(true)
+	, loadPrimaryMat(false)
 {
 }
 
@@ -2067,7 +2068,7 @@ void Matrix::writeMatrix(const string of, bool onlyFilled, int threads ) {
 	string tmp(""), tmp2("");
 	if (onlyFilled) { rowSums = getRowSums(); }
 	int i = -1;
-	while (i<(int)rowIDs.size()) {
+	while (i< int(rowIDs.size())) {
 		uint j = 0;
 		for (; j < threads; j++) {
 			i++;
@@ -2297,7 +2298,7 @@ void SparseMatrix::addCount(string smpl, int row, smat_fl abund) {
 
 HMat::HMat(string L, vector<string> Samples, vector<string> Features)
 :LvlName(L), FeatureNs(Features), SampleNs(Samples),mat(0), catCnt(0), maxCatCnt(0), hiTaNAcnt(0)
-, funcHAnnoAND(","), funcAnnoOR("|")
+, funcAnnoAND(","), funcAnnoOR("|")
 {
 	empty = vector<mat_fl>(SampleNs.size(), 0);
 	mat.resize(FeatureNs.size(), empty);
@@ -2366,13 +2367,13 @@ void HMat::set(string& kk, vector<mat_fl>& v) {
 		div = 1.f / div;
 		subkk.push_back(kk.substr(npos));
 	} else {//only now check funcHAnnoAND
-		pos = kk.find(funcAnnoOR, 0);
+		pos = kk.find(funcAnnoAND, 0);
 		npos=0;
-		 vector<string> subkk(0);
+		//vector<string> subkk(0);
 		 while (pos != string::npos) {
 			 subkk.push_back(kk.substr(npos, pos - npos));
 			 npos = pos + 1;
-			 pos = kk.find(funcAnnoOR, npos);
+			 pos = kk.find(funcAnnoAND, npos);
 			 div += 1.f;
 		 }
 		 subkk.push_back(kk.substr(npos));

@@ -151,7 +151,7 @@ inline std::string itos(int number) {
 class DivEsts{
 public:
 	DivEsts():richness(0),shannon(0),
-		simpson(0),invsimpson(0),chao1(0),eve(0){}
+		simpson(0),invsimpson(0),chao1(0),eve(0), depth(10){}
 	~DivEsts(){}
 	//void print2file(const string);
 	//data vectors

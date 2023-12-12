@@ -16,6 +16,8 @@ typedef robin_hood::unordered_map<uint, mat_fl> sparseMatV;
 
 class column{
 	public:
+		column() :colsum(0.f),id("") {}
+		~column() {}
 		double colsum;
 		string id;
 
@@ -26,7 +28,7 @@ class HMat
 public:
 	HMat(string L, vector<string> Samples, vector<string> Features);
 	~HMat(){}
-	void setDelims(options* opts) { funcHAnnoAND = opts->funcHAnnoAND; funcAnnoOR = opts->funcAnnoOR; }
+	void setDelims(options* opts) { funcAnnoAND = opts->funcAnnoAND; funcAnnoOR = opts->funcAnnoOR; }
 	//get
 	//unsigned long operator [](int i) const    { return registers[i]; }
 	//add single matrix entry (v) to at position j to hierachy level kk
@@ -46,7 +48,7 @@ private:
 	vector<vector<uint>> catCnt;
 	vector<uint> maxCatCnt;
 	uint hiTaNAcnt;
-	string funcHAnnoAND; // = ","  #in sumMat, denotes annotations that should be merged (summed across genes)
+	string funcAnnoAND; // = ","  #in sumMat, denotes annotations that should be merged (summed across genes)
 	string funcAnnoOR; // = "|"  #in sumMat, denotes annotations that are equal but undecided (averaged across genes)
 };
 
@@ -132,8 +134,8 @@ struct job2 {
 };
 
 struct rowRes {
-	rowRes(vector<mat_fl>& x) :rowV(x), NAcnt(0),  rowID(""), taxa(0),Occ(0) {}
-	rowRes(int s) :rowV(s, (mat_fl)0), NAcnt(0),  rowID(""), taxa(0),Occ(0){}
+	rowRes(vector<mat_fl>& x) :rowV(x), NAcnt(0), curRowIdx(0), rowID(""), taxa(0),Occ(0) {}
+	rowRes(int s) :rowV(s, (mat_fl)0), NAcnt(0), curRowIdx(0), rowID(""), taxa(0),Occ(0){}
 	vector<mat_fl> rowV;
 	vector<string> taxa;
 	int NAcnt;

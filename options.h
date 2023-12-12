@@ -115,8 +115,11 @@ public:
 	std::string modHiera;
 	std::string xtra;
 	string funcHieraSep; // = ";" #in sumMat, denotes hierachical levels of annotation string
-	string funcHAnnoAND; // = ","  #in sumMat, denotes annotations that should be merged (summed across genes)
+	string funcAnnoAND; // = ","  #in sumMat, denotes annotations that should be merged (summed across genes)
 	string funcAnnoOR; // = "|"  #in sumMat, denotes annotations that are equal but undecided (averaged across genes)
 };
 
 void cerr2(const std::string x, int ex = 0);
+
+
+
