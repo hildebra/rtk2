@@ -38,6 +38,7 @@ test: $(program_NAME)
 		echo "Test failed: data/table.tsv does not exist"; \
 		exit 1; \
 	fi
+	mkdir -p data/out/
 	./$(program_NAME) -h 
 	./$(program_NAME) memory -i data/table.tsv -o data/out/table. -ns
 	# Check that data/out/table.lobal_diversity.tsv has 5 lines
