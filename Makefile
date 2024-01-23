@@ -10,10 +10,15 @@ program_INCLUDE_DIRS :=
 program_LIBRARY_DIRS :=
 program_LIBRARIES :=
 
-CPPFLAGS += -std=c++0x -Wall -O3 -DnotRpackage=1 -lz 
+
+# Compiler flags
+CPPFLAGS += -std=c++0x -Wall -O3 -DnotRpackage=1
 CPPFLAGS += $(foreach includedir,$(program_INCLUDE_DIRS),-I$(includedir))
-LDFLAGS += -pthread$(foreach librarydir,$(program_LIBRARY_DIRS),-L$(librarydir))
+
+# Linker flags
+LDFLAGS += -pthread -lz $(foreach librarydir,$(program_LIBRARY_DIRS),-L$(librarydir))
 LDFLAGS += $(foreach library,$(program_LIBRARIES),-l$(library))
+
 
 .PHONY: all clean distclean
 
