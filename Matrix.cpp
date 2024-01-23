@@ -1195,11 +1195,11 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	delete in;
 	if (sparse) {
 		maxCols = (int)matSp.size();
-		std::cout << "Sparse Matrix: Read " << maxCols << " colmuns and " << cnt << " rows\n";
+		std::cout << "Sparse Matrix: Read " << maxCols << " columns and " << cnt << " rows\n";
 	} else {
 		maxCols = (int)mat.size();
 #ifdef notRpackage
-		std::cout << "Read " << maxCols << " colmuns and " << mat[0].size() << " rows\n";
+		std::cout << "Read " << maxCols << " columns and " << mat[0].size() << " rows\n";
 #endif
 	}
 
