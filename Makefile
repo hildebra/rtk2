@@ -25,5 +25,28 @@ $(program_NAME): $(program_OBJS)
 clean:
 	@- $(RM) $(program_NAME)
 	@- $(RM) $(program_OBJS)
+	if [ -d data/out/ ] && [ `ls data/out/ | wc -l` -ne 0 ]; then \
+		echo "Removing data/out/*"; \
+		rm -rf data/out/*; \
+	fi
+
+test: $(program_NAME)
+	./$(program_NAME) memory -i data/table.tsv -o data/out/table. -ns | grep -w 30 | grep -w "3 columns"
+	# Check that data/out/table.lobal_diversity.tsv has 5 lines
+	@if [ `cat data/out/table.global_diversity.tsv | wc -l` -eq 5 ]; then \
+		echo "Test passed: 5 lines found in tableglobal_diversity.tsv"; \
+	else \
+		echo "Test failed: table.global_diversity.tsv does not have 5 lines"; \
+		exit 1; \
+	fi
+
+	# Check if "F99" is in data/out/table.alpha_chao1.tsv 
+	@if [ `grep -c "F99" data/out/table.alpha_chao1.tsv` -eq 1 ]; then \
+		echo "Test passed: F99 found in table.alpha_chao1.tsv"; \
+	else \
+		echo "Test failed: F99 not found in table.alpha_chao1.tsv"; \
+		exit 1; \
+	fi
+	
 
 distclean: clean
