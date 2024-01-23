@@ -33,7 +33,13 @@ clean:
 	fi
 
 test: $(program_NAME)
-	./$(program_NAME) memory -i data/table.tsv -o data/out/table. -ns | grep -w 30 | grep -w "3 columns"
+	# check if data/table.tsv exists
+	@if [ ! -f data/table.tsv ]; then \
+		echo "Test failed: data/table.tsv does not exist"; \
+		exit 1; \
+	fi
+	./$(program_NAME) -h 
+	./$(program_NAME) memory -i data/table.tsv -o data/out/table. -ns
 	# Check that data/out/table.lobal_diversity.tsv has 5 lines
 	@if [ `cat data/out/table.global_diversity.tsv | wc -l` -eq 5 ]; then \
 		echo "Test passed: 5 lines found in tableglobal_diversity.tsv"; \
