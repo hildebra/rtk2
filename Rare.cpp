@@ -5,7 +5,8 @@
 //2.07: 26.9.23: (-v) version print
 //2.08: parallelized clstr2mat output, more error tolerant
 //2.09: 7.12.23: added new delim flags for functions (funcHAnnoAND ..)
-const char* rar_ver="2.09";
+//2.10: 23.12.23: reworked "higher lvl" matrix calculations, adding ability to measure abundance by "mean/median" occurrence at lowest level but summing then for higher levels
+const char* rar_ver="2.10";
 
 
 rareStruct* calcDivRar(int i, Matrix* Mo, DivEsts* div, options* opts,
