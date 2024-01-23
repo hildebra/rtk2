@@ -5,7 +5,7 @@
 
 struct rareStruct{
 	int i;
-	DivEsts* div;
+	DivEsts* div=nullptr;
 	vector<string> cntsName;
 	vector<vector<rare_map>> cnts;
 	string skippedNames;

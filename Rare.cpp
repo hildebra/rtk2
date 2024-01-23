@@ -158,9 +158,10 @@ void cerr2(const std::string x, int ex ) {
 options::options(int argc, char** argv) :input(""), output(""), mode(""),
 	referenceDir(""), referenceFile(""),
 	depth(), depthMin(0), sepChar('\t'), repeats(10), write(0), threads(1), writeSwap(true), verbose(false),
-	oldMapStyle(false), sparse(false), pval(1e-5),
+	oldMapStyle(false), sparse(false), pval(1e-5f),
 	modDB(""), modRedund(5), modEnzCompl(0.5f), modModCompl(0.5f), modWrXtraInfo(false),
 	modCollapse(false), calcCoverage(false), calcCovMedian(false), mean(false),
+	highFromLow(false), hieraSrtDown(false),
 	median(false), check4idxMatch(false), gzOut(false), header(true),
 	modDescr(""), modHiera(""), xtra(""),
 	funcHieraSep(";" ), funcAnnoAND(","), funcAnnoOR("|") {
@@ -200,6 +201,8 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 				writeSwap = false;
 			else if (!strcmp(argv[i], "-v"))
 				verbose = true;
+			else if (!strcmp(argv[i], "-hieraSrtDown"))
+				hieraSrtDown = true;		
 			else if (!strcmp(argv[i], "-s")) {
 				string tmp = argv[++i];
 				if (tmp.length() > 1) { cerr << "\"-s\" arg can only be one character long\n"; exit(258); }
@@ -235,6 +238,8 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 				gzOut = true;
 			else if (!strcmp(argv[i], "--no_header"))
 				header = false;
+			else if (!strcmp(argv[i], "-no_header"))
+				header = false;
 			else if (!strcmp(argv[i], "-filterOccPerSmpl"))
 				occPerSmpl = atoi(argv[++i]);
 			else if (!strcmp(argv[i], "-filterMinOcc"))
@@ -243,6 +248,9 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 				extendHierachy = true;
 			else if (!strcmp(argv[i], "-mean"))
 				mean = true;
+			
+			else if (!strcmp(argv[i], "-highFromLow"))
+				highFromLow = true;
 			else if (!strcmp(argv[i], "-median"))
 				median = true;
 			else if (!strcmp(argv[i], "-collapseDblModules"))
@@ -728,7 +736,7 @@ int main(int argc, char* argv[])
 
 		Matrix* Mo = new Matrix(opts->input, opts->output + matCmpr, colsums, colID, sep,opts); //needs to be KO file
 		
-		totalRows;
+		//totalRows;
 		//Matrix* Mo = new Matrix(opts->input, "");
 		//Mo->normalize();
 		//Mo->writeMatrix(opts->output);

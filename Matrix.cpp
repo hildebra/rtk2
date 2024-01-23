@@ -631,7 +631,7 @@ void Modules::calcModAbund( vector<mat_fl>& v, const int pos, const unordered_ma
 //*********************************************************
 Matrix::Matrix(void)
 	:rowIDs(0), colIDs(0), maxCols(0), HI(0), maxLvl(0), sampleNameSep(""), 
-	doSubsets(false), doHigh(false),CoEx_minp(0.f),CoEx_thresh(0.f), fet(nullptr), sparse(true)
+	doSubsets(false), doHigh(false),CoEx_minp(0.f), coexcl_thr(0),CoEx_thresh(0.f), fet(nullptr), sparse(true)
 	, loadPrimaryMat(false)
 {
 }
@@ -878,7 +878,7 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 
 Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 			bool highLvl, bool NumericRowId, bool writeTmpFiles)
-	: rowIDs(0), colIDs(0), maxCols(0), HI(0), maxLvl(0), sampleNameSep(""), 
+	: rowIDs(0), colIDs(0), maxCols(0), HI(nullptr), maxLvl(0), sampleNameSep(""), 
 	doSubsets(false), doHigh(highLvl), colSum(0), rowOcc(0), sparse(true), loadPrimaryMat(false)
 {
 	//this implementation doesn't load the matrix into memory, just creates searches and sum stats
@@ -887,13 +887,15 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 	const char sep = opts->sepChar;
 
 	//bool medianSum = opts->median; 
-	bool meanSum = opts->mean;
+	//bool meanSum = opts->mean;
+	//bool hiFROMlo = opts->highFromLow;
 	//number of hits for a category (by different genes) per samples or overall
-	uint occPerSmpl = opts->occPerSmpl;
-	uint occMin = opts->occMin;
+	//uint occPerSmpl = opts->occPerSmpl;
+	//uint occMin = opts->occMin;
 	//reads matrix from HDD
 	//and writes it simultaneously to single files
 	if (doHigh){
+		HI = new HigherMats(opts);
 		read_hierachy(xtra,opts);
 	} else if (xtra.length() > 2){
 		read_subset_genes(xtra);
@@ -930,13 +932,8 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 	vector<ofstream> outFs(ini_ColPerRow-1);
 	vector<string> outStr(ini_ColPerRow-1);
 	if (doHigh){
-		for (int i = 0; i < maxLvl; i++){
-			//set up empty higher level hierachies
-			HI.push_back(new HMat(LvlNms[i], colIDs, vector<string>(0)));
-		}
-	}
-	for (int i = 0; i < maxLvl; i++) {
-		HI[i]->setDelims(opts);
+		HI->iniHigh(maxLvl, LvlNms, colIDs);
+		HI->setDelims();
 	}
 	//set up tmp empty files
 	if (!doHigh && writeTmpFiles) {
@@ -1041,12 +1038,13 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 	//output of matrices..
 	ofstream out;
 	if (doHigh ){//write out high lvl mats
-		for (int i = 0; i < maxLvl; i++){
-			HI[i]->prep();
-			string oF2 = outF + LvlNms[i] + ".txt";
-			out.open(oF2.c_str(), ios_base::out);
-			HI[i]->print(out,meanSum, occMin, occPerSmpl);
-			out.close();
+		if (opts->highFromLow) {
+			HI->applyFilters();
+			//create higher lvl mats based on summing lowest levels up..
+			HI->createHighMats();
+			HI->writeMats(outF, LvlNms,false);
+		}else {
+			HI->writeMats(outF, LvlNms,true);
 		}
 	}
 	else if(writeTmpFiles){//close filestreams to single sample files
@@ -1076,7 +1074,7 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 }
 
 Matrix::Matrix(options* opts, const string xtra, bool highLvl)
-	: rowIDs(0), colIDs(0), maxCols(0), HI(0), maxLvl(0), sampleNameSep(""), 
+	: rowIDs(0), colIDs(0), maxCols(0), HI(nullptr), maxLvl(0), sampleNameSep(""), 
 	doSubsets(false), doHigh(highLvl), sparse(opts->sparse), loadPrimaryMat(true)
 {
 	const string inF = opts->input;
@@ -1129,14 +1127,19 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	else { in = new ifstream(inF.c_str()); }
 	
 	readColNms(in,sep);
-	if (doHigh){
-		for (int i = 0; i < maxLvl; i++){
+	if (doHigh) {
+		HI = new HigherMats(opts);
+		HI->iniHigh(maxLvl, LvlNms, colIDs);
+		HI->setDelims();
+	}
+	/*	for (int i = 0; i < maxLvl; i++) {
 			HI.push_back(new HMat(LvlNms[i], colIDs, vector<string>(0)));
 		}
 	}
 	for (int i = 0; i < maxLvl; i++) {
 		HI[i]->setDelims(opts);
 	}
+	*/
 	int geneCnt(0);
 	//vector<mat_fl> emptyVec(ini_ColPerRow, (mat_fl)0);
 	if (!sparse) {
@@ -1347,10 +1350,8 @@ void Matrix::addRow(rowRes* ret){
 	}
 	rowIDs[curRowIdx] = ret->rowID;
 	//rowIDs.push_back(ret->rowID);
-	if (doHigh) {//1:finds relevant rowID, extracts taxa; 2:add on all HighLvl mats
-		for (int tt = 0; tt < maxLvl; tt++) {
-			HI[tt]->set(ret->taxa[tt], ret->rowV);
-		}
+	if ( doHigh) {//1:finds relevant rowID, extracts taxa; 2:add on all HighLvl mats
+		HI->setRow(ret);
 	}
 
 	for (uint i = 0; i < ret->rowV.size(); i++) {
@@ -1967,10 +1968,8 @@ vector<mat_fl> Matrix::getRow(uint idx) {
 
 Matrix::~Matrix(void)
 {
-	for (unsigned int i = 0; i < HI.size(); i++){
-		delete HI[i];
-	}
-
+	delete HI;
+	
 }
 
 void Matrix::normalize() {
@@ -2069,7 +2068,7 @@ void Matrix::writeMatrix(const string of, bool onlyFilled, int threads ) {
 	if (onlyFilled) { rowSums = getRowSums(); }
 	int i = -1;
 	while (i< int(rowIDs.size())) {
-		uint j = 0;
+		int j = 0;
 		for (; j < threads; j++) {
 			i++;
 			if (onlyFilled && rowSums[i] == 0) {
@@ -2083,7 +2082,7 @@ void Matrix::writeMatrix(const string of, bool onlyFilled, int threads ) {
 		//bool x= wrStr.get();		wrStr = async(std::launch::async, writeChunk, out,tmp);
 		*out << tmp;
 		tmp = "";
-		for (uint jk = 0; jk < j; jk++) {
+		for (int jk = 0; jk < j; jk++) {
 			tmp += job[jk].get();
 		}
 	}
@@ -2141,6 +2140,8 @@ void Matrix::read_hierachy(const string xtra, options* opts){// bool xtdHiera){
 	vector<string> features;
 	string line;
 	ifstream in(xtra.c_str());
+	vector<stringHash> hiera = HI->getHiera();
+	hiera.resize(maxHir);
 	int cnt = 0;
 	if (!in){
 		cerr2 ("Can't open hierachy file " +xtra +"\n",13);
@@ -2149,19 +2150,21 @@ void Matrix::read_hierachy(const string xtra, options* opts){// bool xtdHiera){
 		//string tmp = ;
 		LvlNms.push_back("L" + stringify((double)k));
 	}
-
+	stringstream hir; stringstream ss;
+	vector<string> pseudo(maxHir, "?");
+	string segs;
+	string segs2;
 	while (getline(in, line, '\n')) {
 		if (line.substr(0, 1) == "#"){ continue; }
-		vector<string> pseudo(maxHir, "?");
 		cnt++;
-		string segs;
-		string segs2;
-		stringstream ss;
+		std::fill(pseudo.begin(), pseudo.end(), "?");
+		segs = ""; segs2 = ""; ss.clear();
 		ss << line;
 		getline(ss, segs, '\t');
 		getline(ss, segs2, '\t');
 		string spl;
-		stringstream hir; hir << segs2;
+		hir.clear();
+		hir << segs2;
 		int i = 0;
 		//string lngTax="";
 		string prevH = "";
@@ -2176,10 +2179,37 @@ void Matrix::read_hierachy(const string xtra, options* opts){// bool xtdHiera){
 			//index possible features
 			if (i >= maxHir){ break; }
 		}
-		if (i > maxLvl){ maxLvl = i; }
-		LUp[segs] = pseudo;
+		//i--;
+		if (i > maxLvl){ 
+			maxLvl = i; 
+		}
+		LUp[segs] = pseudo; 
+		//go from maxLvl to all above 
+
 	}
 	in.close();
+	hiera.resize(maxLvl);
+	//assumes maxLvl is the most resolved 
+	
+	int mostResolved = maxLvl-1;
+	if (opts->hieraSrtDown) {
+		mostResolved = 0;
+	}
+	HI->setMostResolved(mostResolved); 
+	for (auto pseudo1 : LUp) {
+		vector<string> pseudo = pseudo1.second;
+		//string tmp = pseudo[mostResolved];
+		for (size_t ix = 0; ix < maxLvl ; ix++) {
+			if ((pseudo[ix] == "?")) { continue; }
+			auto fnd = hiera[ix ].find(pseudo[mostResolved]);
+			if (fnd == hiera[ix ].end()) {
+				hiera[ix ][pseudo[mostResolved]] = pseudo[ix];
+			}
+			
+		}
+	}
+
+	HI->setHiera(hiera);
 	#ifdef notRpackage
 	std::cout << "Read hierachy. Found " << maxLvl << " hierachical levels.\n";
 	#endif
@@ -2296,9 +2326,83 @@ void SparseMatrix::addCount(string smpl, int row, smat_fl abund) {
 }
 
 
+HigherMats::~HigherMats() {
+	for (unsigned int i = 0; i < HI.size(); i++) {
+		delete HI[i];
+	}
+}
+
+void HigherMats::iniHigh(int MaxL, vector<string>& LvlNms, vector<string>& colIDs) {
+	maxLvl = MaxL;
+	for (int i = 0; i < maxLvl; i++) {
+		//set up empty higher level hierachies
+		HI.push_back(new HMat(LvlNms[i], colIDs, vector<string>(0)));
+	}
+}
+void HigherMats::setDelims() {
+	for (int i = 0; i < maxLvl; i++) {
+		HI[i]->setDelims(opts);
+	}
+}
+void HigherMats::createHighMats() {
+	//int tt = mostResolved ;
+	HMat* rM = HI[mostResolved];
+	vector<string> rFs = rM->getFeatures();
+	for (size_t R = 0; R < rFs.size(); R++) {
+		vector<mat_fl> row = rM->getRow(R);
+		for (int i = 0; i < mostResolved; i++) {
+			auto fnd = hiera[i].find(rFs[R]);
+			if (fnd == hiera[i].end()) {
+				cerr << "Could not find " << rFs[R] << " in hierachy!\n";
+				//exit(82);
+			} else {
+				//string nTax = fnd->second;
+				HI[i]->set(fnd->second, row);
+			}
+		}
+	}
+}
+void HigherMats::writeMats(string outF, vector<string> LvlNms,bool filter) {
+	ofstream out;
+	for (int i = 0; i < maxLvl; i++) {
+		if (filter) {
+			HI[i]->prep();
+		}
+		string oF2 = outF + LvlNms[i] + ".txt";
+		out.open(oF2.c_str(), ios_base::out);
+		if (filter) {
+			HI[i]->print(out, opts->mean, opts->occMin, opts->occPerSmpl);
+		} else {
+			HI[i]->print(out, false, -1, -1);
+		}
+		out.close();
+	}
+}
+void HigherMats::applyFilters() {
+	for (int i = 0; i < maxLvl; i++) {
+		HI[i]->prep();
+		HI[i]->filter(opts->mean, opts->occMin, opts->occPerSmpl);
+	}
+}
+void HigherMats::setRow(rowRes* ret) {
+	//if (opts->highFromLow) {
+		//higher level not calculated here..
+		//return;
+	//}
+	if (opts->highFromLow) {
+		int tt = mostResolved;
+		HI[tt]->set(ret->taxa[tt], ret->rowV);
+	} else {
+		for (int tt = 0; tt < maxLvl; tt++) {
+			HI[tt]->set(ret->taxa[tt], ret->rowV);
+		}
+	}
+}
+
+
 HMat::HMat(string L, vector<string> Samples, vector<string> Features)
 :LvlName(L), FeatureNs(Features), SampleNs(Samples),mat(0), catCnt(0), maxCatCnt(0), hiTaNAcnt(0)
-, funcAnnoAND(","), funcAnnoOR("|")
+, funcAnnoAND(","), funcAnnoOR("|"),filterDone(false)
 {
 	empty = vector<mat_fl>(SampleNs.size(), 0);
 	mat.resize(FeatureNs.size(), empty);
@@ -2425,7 +2529,67 @@ void HMat::prep() {
 		maxCatCnt[i] = mxaOcc;
 	}
 }
-void HMat::print(ofstream& O,bool mean,uint occMin ,uint occPerSmpl){
+
+void HMat::filter(bool mean, int occMin, int occPerSmpl) {
+	if (filterDone) { return; }
+	vector<bool> rms(FeatureNs.size(), false);
+	for (size_t i = 0; i < FeatureNs.size(); i++) {
+		if ((int)maxCatCnt[i] <= occMin) { rms[i] = true;  }
+		for (size_t j = 0; j < SampleNs.size(); j++) {
+			if ((int)catCnt[i][j] <= occPerSmpl) {
+				mat[i][j] = 0;
+			}
+			if (mean) {
+				if (catCnt[i][j] == 0) {
+					mat[i][j] = 0;
+				} else {
+					mat[i][j] /= (mat_fl)catCnt[i][j];
+				}
+			}
+
+		}
+	}
+	this->rmRow(rms);
+	filterDone = true;
+}
+void HMat::rmRow(vector<bool>& rms) {
+	vector<string> FeatureNs2;
+	vector< vector< mat_fl > > mat2;
+	vector<vector<uint>> catCnt2;
+	vector<uint> maxCatCnt2;
+	for (size_t x = 0; x < rms.size(); x++) {
+		if (rms[x]) { continue; }
+		FeatureNs2.push_back(FeatureNs[x]);
+		mat2.push_back(mat[x]);
+		catCnt2.push_back(catCnt[x]);
+		maxCatCnt2.push_back(maxCatCnt[x]);
+	}
+
+	//replace original object;
+	FeatureNs = FeatureNs2;
+	mat = mat2;
+	catCnt = catCnt2;
+	maxCatCnt = maxCatCnt2;
+}
+
+vector<mat_fl>& HMat::getRow(uint x, bool mean) {
+	if (mean) {
+		vector<mat_fl> ret = mat[x];	
+		for (size_t j = 0; j < SampleNs.size(); j++) {
+			if (catCnt[x][j] == 0) {
+				ret[x] = 0;
+			} else {
+				ret[x] = (mat[x][j] / (mat_fl)catCnt[x][j]);
+			}
+		}
+		return	ret;
+	} else {
+		return mat[x];
+	}
+}
+
+	
+void HMat::print(ofstream& O,bool mean,int occMin ,int occPerSmpl){
 	O << LvlName ;
 	for (size_t i = 0; i < SampleNs.size(); i++){
 		O << "\t" << SampleNs[i];
@@ -2443,10 +2607,10 @@ void HMat::print(ofstream& O,bool mean,uint occMin ,uint occPerSmpl){
 			continue;
 		}
 		//not enough overall support for category?
-		if (maxCatCnt[i] <= occMin) { continue; }
+		if (occMin>0 && (int)maxCatCnt[i] <= occMin) { continue; }
 		O << "\n" << FeatureNs[i];
 		for (size_t j = 0; j < SampleNs.size(); j++){
-			if (catCnt[i][j] <= occPerSmpl) {
+			if (occPerSmpl>0 && (int)catCnt[i][j] <= occPerSmpl) {
 				O << "\t0";
 			} else if (!mean) {
 				O << "\t" << mat[i][j];

@@ -12,6 +12,7 @@ string join(const vector<int>& in, const string &X);
 bool writeChunk(ostream* o, string  s);
 
 typedef robin_hood::unordered_map<uint, mat_fl> sparseMatV;
+typedef robin_hood::unordered_map<string, string> stringHash;
 //typedef std::unordered_map<uint, mat_fl> sparseMatV;
 
 class column{
@@ -22,6 +23,18 @@ class column{
 		string id;
 
 };
+
+struct rowRes {
+	rowRes(vector<mat_fl>& x) :rowV(x), NAcnt(0), curRowIdx(0), rowID(""), taxa(0), Occ(0) {}
+	rowRes(int s) :rowV(s, (mat_fl)0), NAcnt(0), curRowIdx(0), rowID(""), taxa(0), Occ(0) {}
+	vector<mat_fl> rowV;
+	vector<string> taxa;
+	int NAcnt;
+	int curRowIdx;
+	int Occ;
+	string rowID;
+};
+
 
 class HMat
 {
@@ -35,10 +48,14 @@ public:
 	void set(string& kk, int j, mat_fl v);
 	void set(string& kk, vector<mat_fl>& v);
 	void prep();
+	vector<string>& getFeatures() { return FeatureNs; }
+	vector<mat_fl>& getRow(uint x, bool mean=false);
 
-	void print(ofstream&,bool,uint, uint);
+	void print(ofstream&,bool,int, int);
+	void filter(bool mean,int occMin, int occPerSmpl);
 
 private:
+	void rmRow(vector<bool>& rms);
 	GeneIDidx Feat2mat;
 	string LvlName;
 
@@ -50,6 +67,28 @@ private:
 	uint hiTaNAcnt;
 	string funcAnnoAND; // = ","  #in sumMat, denotes annotations that should be merged (summed across genes)
 	string funcAnnoOR; // = "|"  #in sumMat, denotes annotations that are equal but undecided (averaged across genes)
+	bool filterDone;
+};
+
+class HigherMats {
+public:
+	HigherMats(options* opt):HI(0), maxLvl(0),opts(opt), mostResolved(0){}
+	~HigherMats();
+	void iniHigh(int MaxL, vector<string>& LvlNms, vector<string>& colIDs);
+	void setDelims();
+	void writeMats(string outF, vector<string> LvlNms,bool filter);
+	void createHighMats();
+	void applyFilters();
+	void setRow(rowRes* ret);
+	void setHiera(vector<stringHash>& hier) { hiera = hier; }
+	vector<stringHash>& getHiera() { return hiera ; }
+	void setMostResolved(int x) { mostResolved = x; }
+private:
+	vector< HMat*> HI;
+	int maxLvl;
+	options* opts;
+	vector<stringHash> hiera;
+	int mostResolved;
 };
 
 class SparseMatrix
@@ -133,16 +172,6 @@ struct job2 {
 	bool inUse = false;
 };
 
-struct rowRes {
-	rowRes(vector<mat_fl>& x) :rowV(x), NAcnt(0), curRowIdx(0), rowID(""), taxa(0),Occ(0) {}
-	rowRes(int s) :rowV(s, (mat_fl)0), NAcnt(0), curRowIdx(0), rowID(""), taxa(0),Occ(0){}
-	vector<mat_fl> rowV;
-	vector<string> taxa;
-	int NAcnt;
-	int curRowIdx;
-	int Occ;
-	string rowID;
-};
 
 struct job3 {
 	std::future <rowRes*> fut;
@@ -245,7 +274,8 @@ protected:
 	vector< sparseMatV > matSp;
 	vector< string > rowIDs,colIDs;
 	unordered_map<string, int> colID_hash, rowID_hash;
-	vector<HMat*> HI;
+	//vector<HMat*> HI;
+	HigherMats* HI;
 	LvlUp LUp; //contains hierachy info (gene -> tax levels/function levels..
 	int maxLvl;
 	vector<string> LvlNms;

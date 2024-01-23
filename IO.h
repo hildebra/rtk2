@@ -223,7 +223,7 @@ class GeneAbundance
 {
 public:
 	GeneAbundance(const string, const string);
-	inline smat_fl getAbundance(const string);
+	smat_fl getAbundance(const string);
 private:
 	bool isPsAss;
 	SmplAbun GeneAbu;

@@ -112,7 +112,7 @@ ClStr2Mat::ClStr2Mat(options* opts):
 	mapGr(0), SmplSum(0), smplN(0), curr(-1),
 	lastline(""), sampleSeq("__"){
 	ifstream incl2;
-	FILE* incl;
+	//FILE* incl;
 	const string inF = opts->input;
 	const string outF = opts->output;
 	const string mapF = opts->map;
@@ -406,7 +406,7 @@ void ClStr2Mat::read_map(const string mapF, bool calcCoverage, bool calcCovMedia
 			curLine.push_back(segments);
 		}
 		if (skSmplCol > -1 && curLine[skSmplCol] == "1") { continue; }
-		if (assGrpN >= 0 && curLine.size() <= assGrpN) {
+		if (assGrpN >= 0 && int(curLine.size()) <= assGrpN) {
 			curLine.resize(assGrpN + 1, "");
 		}
 
@@ -480,7 +480,7 @@ void ClStr2Mat::read_map(const string mapF, bool calcCoverage, bool calcCovMedia
 //void ClStr2Mat::read_abundances(SmplOccurMult& CntMapGrps, string baseP, bool calcCoverage,
 	//bool calcCovMedian, bool oldFolderStructure){
 	smplN = smplLoc.size();
-	uint geneN = 0;
+	//uint geneN = 0;
 	//uint preMapSize((int)smplLoc.size());
 
 	cout << "Reading abundances from " << smplN << " samples\n";
@@ -575,7 +575,7 @@ GeneAbundance::GeneAbundance(const string path, const string abunF):
 	while (fgets(buf, sizeof buf, in) != NULL) {
 		//buf[strcspn(buf, "\n")] = 0;
 		smat_fl abu; char gene[300];
-		sscanf(buf, "%s\t%f",  gene, &abu);
+		bool wrk = sscanf(buf, "%s\t%f",  gene, &abu);
 		GeneAbu[gene] = abu;
 		//string line(buf);
 		//size_t pos = line.find("\t");

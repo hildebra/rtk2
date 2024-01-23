@@ -106,6 +106,8 @@ public:
 	bool calcCovMedian;
 	bool extendHierachy = false;
 	bool mean;
+	bool highFromLow;
+	bool hieraSrtDown;
 	bool median;
 	bool check4idxMatch;//assummes tab separated row name, that is number (idx); used in "lineExtr", "extractRows"
 	bool gzOut;

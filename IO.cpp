@@ -160,7 +160,7 @@ void extractRowsMultiMat(options* opts) {
 		if (gid == srchH.end()) { continue; }
 		//sure hit after this point, something has to be written out
 		geneCntFnd++;
-		for (int j = 0; j < gid->second.size(); j++) {
+		for (size_t j = 0; j < gid->second.size(); j++) {
 			//find bins/submatrices that line should be written to
 			auto bid = binH.find(gid->second[j]);
 			if (bid == binH.end()) {
@@ -1309,7 +1309,7 @@ vector<string> getMMSeqsClus(FILE* incl, string &lastline,bool& cont) {
 	string curClus("");
 	string curLine("");
 	if (lastline.length() == 0) {
-		fgets(buf, sizeof buf, incl);
+	    bool wrk = fgets(buf, sizeof buf, incl);
 		buf[strcspn(buf, "\n")] = 0;
 		lastline = string(buf);
 		return ret;
@@ -1383,7 +1383,7 @@ textBlock* getClusBlock(FILE* incl, string& lastline) {// ,  FILE* incl,
     }
     else {
         //getline(incl, line);
-        fgets(buf, bufS, incl);		buf[strcspn(buf, "\n")] = 0;
+        bool wrk = fgets(buf, bufS, incl);		buf[strcspn(buf, "\n")] = 0;
 
         ret->txt.push_back(string(buf));
     }
