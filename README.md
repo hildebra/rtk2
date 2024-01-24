@@ -1,10 +1,12 @@
 # rtk
 
+[![Action CI](https://github.com/hildebra/rtk2/actions/workflows/test.yml/badge.svg)](https://github.com/hildebra/rtk2/actions/workflows/test.yml)
+
 ## Quickstart
 
 ```
-git clone https://github.com/hildebra/rtk.git
-cd rtk
+git clone https://github.com/hildebra/rtk2.git
+cd rtk2
 make
 ```
 
