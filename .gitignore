@@ -1,3 +1,5 @@
 rtk
 rtk2
 *.o
+data/out/*.*
+.vscode
