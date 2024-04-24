@@ -177,6 +177,7 @@ void extractRowsMultiMat(options* opts) {
 	for (uint i = 0; i < outS.size(); i++) {
 		delete outS[i];
 	}
+    delete in;
 
 }
 void extractRows(options* opts){

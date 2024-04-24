@@ -23,6 +23,7 @@
 #include <mutex>
 #include <chrono>
 #include <random>
+#include <sys/stat.h>
 #include "robin_hood.h"
 
 
@@ -41,6 +42,11 @@
 #endif
 typedef double mat_fl;
 typedef float smat_fl;
+
+inline bool fileExists(const std::string fi) {
+	struct stat buffer;
+	return (stat(fi.c_str(), &buffer) == 0);
+}
 
 bool isGZfile(const std::string fi);
 

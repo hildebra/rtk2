@@ -14,6 +14,7 @@ CPPFLAGS += -std=c++0x -Wall -O3 -DnotRpackage=1
 CPPFLAGS += $(foreach includedir,$(program_INCLUDE_DIRS),-I$(includedir))
 LDFLAGS += -pthread$(foreach librarydir,$(program_LIBRARY_DIRS),-L$(librarydir))
 LDFLAGS += $(foreach library,$(program_LIBRARIES),-l$(library))
+LDLIBS += -lz
 
 .PHONY: all clean distclean
 
@@ -21,7 +22,7 @@ all: $(program_NAME)
 
 $(program_NAME): $(program_OBJS)
 	echo "LINK: $(LINK.cc) "
-	$(LINK.cc) $(program_OBJS) -o $(program_NAME)  -lz
+	$(LINK.cc) $(program_OBJS) -o $(program_NAME) $(LDLIBS) -static
 
 
 clean:

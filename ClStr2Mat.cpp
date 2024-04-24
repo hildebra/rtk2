@@ -556,34 +556,64 @@ void ContigCrossHit::addHit(int Smpl, int Ctg) {
 GeneAbundance::GeneAbundance(const string path, const string abunF):
 	isPsAss(false){
 	if (path == "" && abunF == "") { return; }//not required to read this (non-existant) file
-	FILE* in;
+	//FILE* in;
 	//first test if this is a pseudoassembly
-	in = fopen((path + pseudoAssMarker).c_str(), "r");
-	if (in != NULL) {
-		fclose(in);
+	//in = fopen((path + pseudoAssMarker).c_str(), "r");
+	//if (in != NULL) {
+//	in = fopen(newS.c_str(), "r");
+	if (fileExists((path + pseudoAssMarker).c_str())){
 		isPsAss = true;
 		return;
 	}
 	//not? then read abundances
 	string newS = path + abunF;
-	in = fopen(newS.c_str(), "r");
+	//test if input is gzipped
+	string newSgz = newS + ".gz"; 
+	if (fileExists(newSgz) && !fileExists(newSgz)) {
+		newS = newSgz;
+	}
+
+	//isGZfile
+
+	istream* in;
+	if (isGZfile(newS)) {
+#ifdef _gzipread
+		in = new igzstream(newS.c_str(), ios::in);
+		cout << "Reading gzip input\n";
+#else
+		cout << "gzip not supported in your rtk build\n"; exit(50);
+#endif
+	}
+	else {
+		in = new ifstream(newS.c_str());
+	}
+	if (!(*in)) {
+#ifdef notRpackage
+		cerr << "Can't open infile " << newS << endl; std::exit(99);
+#endif
+	}
+
 	if (in == NULL) {
 		cerr << "Couldn't open gene abundance file " << newS << endl;
 		exit(36);
 	}
 	char buf[400];
-	while (fgets(buf, sizeof buf, in) != NULL) {
-		//buf[strcspn(buf, "\n")] = 0;
+	/*while (fgets(buf, sizeof buf, in) != NULL) {
 		smat_fl abu; char gene[300];
 		bool wrk = sscanf(buf, "%s\t%f",  gene, &abu);
 		GeneAbu[gene] = abu;
 		//string line(buf);
-		//size_t pos = line.find("\t");
-		//string gene = line.substr(0, pos);
-		//GeneAbu[gene] = (smat_fl)atof(line.substr(pos + 1).c_str());
+		*/
+	string line;
+	while (getline((*in), line, '\n')) {
+		size_t pos = line.find("\t");
+		string gene = line.substr(0, pos);
+		GeneAbu[gene] = (smat_fl)atof(line.substr(pos + 1).c_str());
 		
 	}
-	fclose(in);
+	delete in;
+
+	//fclose(in);
 }
 smat_fl GeneAbundance::getAbundance(const string x) {
 	if (isPsAss) {
