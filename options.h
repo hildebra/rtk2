@@ -28,6 +28,7 @@
 
 
 
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
 #define _gziprea//d
 #pragma warning(disable:4996)
@@ -44,8 +45,15 @@ typedef double mat_fl;
 typedef float smat_fl;
 
 inline bool fileExists(const std::string fi) {
-	struct stat buffer;
-	return (stat(fi.c_str(), &buffer) == 0);
+	//struct stat buffer;
+	//return (stat(fi.c_str(), &buffer) == 0);
+	//return exists(fi);
+	std::ifstream file(fi);
+	if (!file.is_open()) {
+		return false;
+	}
+	file.close();
+	return true;
 }
 
 bool isGZfile(const std::string fi);

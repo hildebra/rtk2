@@ -7,7 +7,8 @@
 //2.09: 7.12.23: added new delim flags for functions (funcHAnnoAND ..)
 //2.10: 23.12.23: reworked "higher lvl" matrix calculations, adding ability to measure abundance by "mean/median" occurrence at lowest level but summing then for higher levels
 //2.11: 24.4.24: `geneMat` subcommand can now accept .gz input coverage files
-const char* rar_ver="2.11";
+//2.12: 30.4.24: fix open .gz in geneMat mode
+const char* rar_ver="2.12";
 
 
 rareStruct* calcDivRar(int i, Matrix* Mo, DivEsts* div, options* opts,

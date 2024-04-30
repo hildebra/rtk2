@@ -569,9 +569,11 @@ GeneAbundance::GeneAbundance(const string path, const string abunF):
 	string newS = path + abunF;
 	//test if input is gzipped
 	string newSgz = newS + ".gz"; 
-	if (fileExists(newSgz) && !fileExists(newSgz)) {
+	if (fileExists(newSgz) && !fileExists(newS)) {
 		newS = newSgz;
+		cout << "switch";
 	}
+	cout << "FILE" << newS << endl << newSgz << endl;
 
 	//isGZfile
 
@@ -589,7 +591,7 @@ GeneAbundance::GeneAbundance(const string path, const string abunF):
 	}
 	if (!(*in)) {
 #ifdef notRpackage
-		cerr << "Can't open infile " << newS << endl; std::exit(99);
+		cerr << "Can't open abundance infile " << newS << endl; std::exit(99);
 #endif
 	}
 
