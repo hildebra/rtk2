@@ -706,9 +706,9 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 	istream* in;
 	if (isGZfile(inF)) {
 #ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in); cout << "Straming gzip input on the fly\n";
+		in = new igzstream(inF.c_str(), ios::in); std::cout << "Straming gzip input on the fly\n";
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else { in = new ifstream(inF.c_str()); }
@@ -720,9 +720,9 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 	if (isGZfile(outF)) {
 #ifdef _gzipread
 		out = new ogzstream(outF.c_str(), ios::out);
-		cout << "Writing gzip'd matrix " << outF << endl;
+		std::cout << "Writing gzip'd matrix " << outF << endl;
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else { out = new ofstream(outF); }
@@ -737,7 +737,7 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 #ifdef _gzipread
 		in = new igzstream(inF.c_str(), ios::in); 
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else { in = new ifstream(inF.c_str()); }
@@ -746,7 +746,7 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 	//check that colNames and colSums are in same order..
 	for (uint i = 0; i < colIDs.size(); i++) {
 		if (colNms[i] != colIDs[i]) {
-			cout << "Unequal order!\n";
+			std::cout << "Unequal order!\n";
 			exit(339);
 		}
 	}
@@ -860,10 +860,10 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 
 	}
 	*/
-	cout << "Normalized matrix, writing " << rowCnt << " rows and " << colNms.size() << " columns\n";
+	std::cout << "Normalized matrix, writing " << rowCnt << " rows and " << colNms.size() << " columns\n";
 	for (uint i = 0; i < colSum.size(); i++) {
 		if (colsums[i] != colSum[i]) {
-			cout << "Unequal colSum!\n";
+			std::cout << "Unequal colSum!\n";
 			exit(339);
 		}
 	}
@@ -904,9 +904,9 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 	istream* in;
 	if (isGZfile(inF)) {
 #ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in); cout << "Reading gzip input "<< inF<<endl;
+		in = new igzstream(inF.c_str(), ios::in); std::cout << "Reading gzip input "<< inF<<endl;
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else { in = new ifstream(inF.c_str()); }
@@ -920,7 +920,7 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 #ifdef _gzipread
 		in = new igzstream(inF.c_str(), ios::in); 
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else { in = new ifstream(inF.c_str()); }
@@ -1092,9 +1092,9 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	if (isGZfile(inF)) {
 #ifdef _gzipread
 		in = new igzstream(inF.c_str(), ios::in);
-		cout << "Reading gzip input\n";
+		std::cout << "Reading gzip input\n";
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 
 	}
@@ -1107,7 +1107,7 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	int ini_ColPerRow = iniCols(in,sep);
 	int cnt(0);
 	int cntNA(0);
-	//cout << "cols: " << ini_ColPerRow << endl;
+	//std::cout << "cols: " << ini_ColPerRow << endl;
 
 	if (ini_ColPerRow == 0) {
 
@@ -1121,7 +1121,7 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 #ifdef _gzipread
 		in = new igzstream(inF.c_str(), ios::in);
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else { in = new ifstream(inF.c_str()); }
@@ -1600,7 +1600,7 @@ void Matrix::decluter(options* opts) {
 	}
 	fclose(incl);
 	lastline = "";
-	cout << "Found " << clusBlocks << "total cluster blocks\n";
+	std::cout << "Found " << clusBlocks << "total cluster blocks\n";
 	incl = fopen(inF.c_str(), "r");
 
 
@@ -1696,7 +1696,7 @@ void Matrix::decluter2(options* opts) {
 	}
 	fclose(incl);
 	cont = true; lastline = "";
-	cout << "Found " << clusBlocks << " total cluster blocks\n";
+	std::cout << "Found " << clusBlocks << " total cluster blocks\n";
 	incl = fopen(inF.c_str(), "r");
 
 
@@ -1779,8 +1779,8 @@ void Matrix::decluter2(options* opts) {
 		}
 	}
 
-	cout << "Merged " << totalMergedID << " / " << totalMergedCE << " / " << cases << " cases\n";
-	cout << "Writing new matrix to " << outF2 << endl;
+	std::cout << "Merged " << totalMergedID << " / " << totalMergedCE << " / " << cases << " cases\n";
+	std::cout << "Writing new matrix to " << outF2 << endl;
 
 	list.close();
 	fclose(incl);
@@ -2038,9 +2038,9 @@ void Matrix::writeMatrix(const string of, bool onlyFilled, int threads ) {
 	if (isGZfile(of)) {
 #ifdef _gzipread
 		out = new ogzstream(of.c_str(), ios::out);
-		cout << "Writing gzip'd matrix\n";
+		std::cout << "Writing gzip'd matrix\n";
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else {

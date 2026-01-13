@@ -8,7 +8,9 @@
 //2.10: 23.12.23: reworked "higher lvl" matrix calculations, adding ability to measure abundance by "mean/median" occurrence at lowest level but summing then for higher levels
 //2.11: 24.4.24: `geneMat` subcommand can now accept .gz input coverage files
 //2.12: 30.4.24: fix open .gz in geneMat mode
-const char* rar_ver="2.12";
+//2.13: 2.5.24: print suppl coverage of samples
+//2.14: 13.1.26: just some additional counts for geneMatrix mode
+const char* rar_ver="2.14";
 
 
 rareStruct* calcDivRar(int i, Matrix* Mo, DivEsts* div, options* opts,
@@ -79,6 +81,8 @@ void helpMsglegacy(){
 
 void stateVersion(){
     printf("rarefaction tool kit (rtk) %s\n", rar_ver);
+	std::cout << "compiled on: " << __DATE__ << " at " << __TIME__ << endl;
+	std::cout << "compiled with: " << __cplusplus << endl;
 }
 
 void versionMsg() {
@@ -138,7 +142,7 @@ vector<double> parseDepths(string a){
     while (ss >> i)
     {
         vect.push_back(i);
-        cout << i << " ";
+        std::cout << i << " ";
         if (ss.peek() == ',')
             ss.ignore();
     }
@@ -166,6 +170,7 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 	modCollapse(false), calcCoverage(false), calcCovMedian(false), mean(false),
 	highFromLow(false), hieraSrtDown(false),
 	median(false), check4idxMatch(false), gzOut(false), header(true),
+	calcSupplCov(false),
 	modDescr(""), modHiera(""), xtra(""),
 	funcHieraSep(";" ), funcAnnoAND(","), funcAnnoOR("|") {
 
@@ -204,6 +209,8 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
 				writeSwap = false;
 			else if (!strcmp(argv[i], "-v"))
 				verbose = true;
+			else if (!strcmp(argv[i], "-calcSupplCov"))
+				calcSupplCov = true;
 			else if (!strcmp(argv[i], "-hieraSrtDown"))
 				hieraSrtDown = true;		
 			else if (!strcmp(argv[i], "-s")) {
@@ -281,14 +288,14 @@ options::options(int argc, char** argv) :input(""), output(""), mode(""),
         }
 
 		if (calcCovMedian && calcCoverage) {
-			cout << "Can not calc median and coverage at the same time, please use only one option\n(-useCoverage && -useCovMedian)\n";
+			std::cout << "Can not calc median and coverage at the same time, please use only one option\n(-useCoverage && -useCovMedian)\n";
 			exit(734);
 		}
 		if (calcCovMedian) {
-			cout << "Using median coverage for abundance estimates\n";
+			std::cout << "Using median coverage for abundance estimates\n";
 		}
 		if (calcCoverage) {
-			cout << "Using mean coverage for abundance estimates\n";
+			std::cout << "Using mean coverage for abundance estimates\n";
 		}
 
         // sanity checks
@@ -325,28 +332,28 @@ void options::print_rare_details(){
 
     stateVersion();
     // print run mode:
-    cout << "------------------------------------ "  << std::endl;
-    cout << "Run information:" << std::endl;
-    cout << "input file:     " << input  << std::endl;
-    cout << "output file:    " << output  << std::endl;
-    cout << "mode:           " << mode  << std::endl;
+    std::cout << "------------------------------------ "  << std::endl;
+    std::cout << "Run information:" << std::endl;
+    std::cout << "input file:     " << input  << std::endl;
+    std::cout << "output file:    " << output  << std::endl;
+    std::cout << "mode:           " << mode  << std::endl;
     //	if(depth != 0){
-    //cout << "depth:          " << depth  << std::endl;
+    //std::cout << "depth:          " << depth  << std::endl;
     //}else{
-    //	cout << "depth:          0.95 x min. column sum"   << std::endl;
+    //	std::cout << "depth:          0.95 x min. column sum"   << std::endl;
     //}
-    cout << "repeats:        " << repeats  << std::endl;
-    cout << "writes:         " << write  << std::endl;
-    cout << "threads:        " << threads  << std::endl;
-    cout << "use swap:       ";
+    std::cout << "repeats:        " << repeats  << std::endl;
+    std::cout << "writes:         " << write  << std::endl;
+    std::cout << "threads:        " << threads  << std::endl;
+    std::cout << "use swap:       ";
     if(writeSwap == false){
-        cout << "false" << std::endl;
+        std::cout << "false" << std::endl;
     }else{
-        cout << "true" << std::endl;
+        std::cout << "true" << std::endl;
     }
 
-    //cout << "mode:           " << mode  << std::endl;
-    cout << std::endl;
+    //std::cout << "mode:           " << mode  << std::endl;
+    std::cout << std::endl;
 
 }
 
@@ -358,13 +365,13 @@ void rareExtremLowMem(options * opts,  int writeFiles, string arg4, int repeats,
     // the measures are then combines again.
 
     //split mat code
-    cout << "Splitting input matrix to disk" << std::endl;
+    std::cout << "Splitting input matrix to disk" << std::endl;
     vector<string> fileNames;
 	const string outF = opts->output;
     Matrix* Mo 	= new Matrix(opts, "", fileNames, false, true);
     vector < string > SampleNames 	= Mo->getSampleNames();
     vector < string > rowNames 		= Mo->getRowNames();
-    cout << "Done loading matrix" << std::endl;
+    std::cout << "Done loading matrix" << std::endl;
 
     // abundance vectors to hold the number of occurences of genes per row
     // this will be used for ICE, ACE and or Chao2 estimation
@@ -441,12 +448,12 @@ void rareExtremLowMem(options * opts,  int writeFiles, string arg4, int repeats,
                 }
 
                 if(i < 3 || i % thirds == 0  ){
-                    cout << "At Sample " << i+1 << " of " << smpls << " Samples" << std::endl;
+                    std::cout << "At Sample " << i+1 << " of " << smpls << " Samples" << std::endl;
                     if(i > 3 && i % thirds == 0 ){
-                        cout << "..." << std::endl ;
+                        std::cout << "..." << std::endl ;
                     }
                 }else if( i == 3){
-                    cout << "..." << std::endl ;
+                    std::cout << "..." << std::endl ;
                 }
 
                 i++;
@@ -514,7 +521,7 @@ void rareExtremLowMem(options * opts,  int writeFiles, string arg4, int repeats,
     computeCE(ACE, occuencesInRow);
     writeGlobalDiv(opts, ICE, ACE, chao2, outF + "global_diversity.tsv");
 
-    cout << "Finished\n";
+    std::cout << "Finished\n";
 }
 
 void binaryStoreSample(options* opts, vector<vector<vector< string >>>& tmpMatFiles, rareStruct* tmpRS, vector<string>& rowNames, string outF,  vector<vector<string>>& cntsNames, bool reshapeMap){
@@ -650,7 +657,7 @@ int main(int argc, char* argv[])
 	// start the modes
 	//	if (argc>3){
 	if (mode == "splitMat") {
-		cout << mode << " mode" << std::endl;
+		std::cout << mode << " mode" << std::endl;
 		vector<string> empt;
 		Matrix* Mo = new Matrix(opts, opts->xtra, empt, false);
 		//Mo->splitOnHDD(opts->output);	//Mo->writeSums(opts->output);
@@ -660,7 +667,7 @@ int main(int argc, char* argv[])
 		//	rareLowMem(opts->input, opts->output, writeFiles,  arg4,  repeats, numThr);
 	}
 	else if (mode == "decluter" || mode == "decluter2") {
-		cout << mode << " mode" << std::endl;
+		std::cout << mode << " mode" << std::endl;
 		//decluttering of matrix based on 90% gene clustering + co-exclusion of genes
 		opts->sparse = true;
 		Matrix* Mo = new Matrix(opts, "");
@@ -681,9 +688,9 @@ int main(int argc, char* argv[])
 
 	}
 	else if (mode == "module") {
-		cout << mode << " mode" << std::endl;
+		std::cout << mode << " mode" << std::endl;
 		if (argc < 7) {
-			cout << "Usage: ./rare module [KO matrix] [outputfile] [module DB file] [KO redundancy, int] [Pathway completeness, float 0-1] [Enzyme completeness, float 0-1]\n";
+			std::cout << "Usage: ./rare module [KO matrix] [outputfile] [module DB file] [KO redundancy, int] [Pathway completeness, float 0-1] [Enzyme completeness, float 0-1]\n";
 			cerr << "Not enough arguments for \"module\" function\n";
 			exit(3);
 		}
@@ -699,9 +706,9 @@ int main(int argc, char* argv[])
 		std::exit(0);
 	}
 	else if (mode == "normalize") {
-		cout << mode << " mode" << std::endl;
+		std::cout << mode << " mode" << std::endl;
 		if (argc < 4) {
-			cout << "Usage: ./rare normalize [in matrix] [outputfile]\n";
+			std::cout << "Usage: ./rare normalize [in matrix] [outputfile]\n";
 			cerr << "Not enough arguments for \"normalize\" function\n";
 			exit(3);
 		}
@@ -718,20 +725,20 @@ int main(int argc, char* argv[])
 			colID = Mo->getSampleNames();
 			totalRows = (int)Mo->getRowNames().size();
 			delete Mo;
-			cout << "Read matrix with "<< totalRows<<" rows and "<< colID.size()<<" columns\n";
+			std::cout << "Read matrix with "<< totalRows<<" rows and "<< colID.size()<<" columns\n";
 		}
 		vector<double> srtCS = colsums;
 		sort(srtCS.begin(), srtCS.end(), greater<double>());
 		if (srtCS.size() > 5) {
-			cout << "Top 5 colSums:" << srtCS[0] << " " << srtCS[1] << " " << srtCS[2] << " "<<srtCS[3] << " " << srtCS[4] << endl;
-			cout << "Bottom 5 colSums:" << srtCS[srtCS.size() - 5] << " " << srtCS[srtCS.size() - 4] << " "<<srtCS[srtCS.size() - 3] << " " << srtCS[srtCS.size() - 2] << " " << srtCS[srtCS.size() - 1] << endl;
+			std::cout << "Top 5 colSums:" << srtCS[0] << " " << srtCS[1] << " " << srtCS[2] << " "<<srtCS[3] << " " << srtCS[4] << endl;
+			std::cout << "Bottom 5 colSums:" << srtCS[srtCS.size() - 5] << " " << srtCS[srtCS.size() - 4] << " "<<srtCS[srtCS.size() - 3] << " " << srtCS[srtCS.size() - 2] << " " << srtCS[srtCS.size() - 1] << endl;
 		}
 		int zeroCnt(0);
 		for (size_t i = 0; i < srtCS.size(); i++) {
 			if (srtCS[i] == 0) { zeroCnt++; }
 		}
-		cout << "Total of " << zeroCnt << " zero colsum samples\n";
-		cout << "Starting with matrix normalization\n";
+		std::cout << "Total of " << zeroCnt << " zero colsum samples\n";
+		std::cout << "Starting with matrix normalization\n";
 		vector<string> fileNames;
 		string matCmpr = "";
 		if (opts->gzOut) { matCmpr = ".gz"; }
@@ -751,24 +758,25 @@ int main(int argc, char* argv[])
 	}	else if (mode == "version" || mode == "-version" || mode == "-v" || mode == "--version") {
 		versionMsg();
 	}	else if (mode == "submatrices") {
-		cout << mode << " mode" << std::endl;
+		std::cout << mode << " mode" << std::endl;
 		extractRowsMultiMat(opts);
 		std::exit(0);
 
 	} else if (mode == "lineExtr" || mode == "rowSubset") {
-		cout << mode << " mode" << std::endl;
+		//extracts specific lines from matrix, given by ref file 
+		std::cout << mode << " mode" << std::endl;
 		extractRows(opts);
 		std::exit(0);
 	}
 	else if (mode == "mergeMat") {
-		cout << mode << " mode" << std::endl;
+		std::cout << mode << " mode" << std::endl;
 		VecFiles* VFs = new VecFiles(opts->input, opts->output, arg4);
 		delete VFs;
 		std::exit(0);
 	}
 	else if (mode == "sumMat") {
 		//creates a matrix summed to reference system (NOG, Taxa, ..)
-		cout << mode << " mode" << std::endl;
+		std::cout << mode << " mode" << std::endl;
 
 		vector<string> empt;
 		Matrix* Mo = new Matrix(opts, opts->referenceDir, empt, true,false,false);
@@ -777,21 +785,21 @@ int main(int argc, char* argv[])
 	}
 	else if (mode == "colSums" || mode == "colsums" || mode == "colSum" || mode == "rowOcc") {
 		// just load and discard the matrix and report back the colsums
-		cout << mode<< " mode" << std::endl;
+		std::cout << mode<< " mode" << std::endl;
 		vector<string> fileNames;
 		Matrix* Mo = new Matrix(opts, "", fileNames, false, true, false);
 		if (mode == "colSums" || mode == "colsums" || mode == "colSum") {
 			column co = Mo->getMinColumn();
 			vector< pair< double, string>> colsums = Mo->getColSums();
 			Mo->writeColSums(opts->output);
-			cout << "" << std::endl;
-			cout << "------------------------------------" << std::endl;
-			cout << "ColSums output" << std::endl;
-			cout << "Smallest column: " << co.id << std::endl;
-			cout << "With counts:     " << co.colsum << std::endl<<endl;
-			cout << "Colsums were written into the files:" << std::endl;
-			cout << "    " << opts->output << "colSums.txt" << std::endl;
-			cout << "    " << opts->output << "colSums_sorted.txt" << std::endl;
+			std::cout << "" << std::endl;
+			std::cout << "------------------------------------" << std::endl;
+			std::cout << "ColSums output" << std::endl;
+			std::cout << "Smallest column: " << co.id << std::endl;
+			std::cout << "With counts:     " << co.colsum << std::endl<<endl;
+			std::cout << "Colsums were written into the files:" << std::endl;
+			std::cout << "    " << opts->output << "colSums.txt" << std::endl;
+			std::cout << "    " << opts->output << "colSums_sorted.txt" << std::endl;
 		}
 		else if (mode == "rowOcc") {
 			//vector<int> RO = Mo->getRowOcc();
@@ -801,27 +809,24 @@ int main(int argc, char* argv[])
 		std::exit(0);
 	}
 	else if (mode == "geneMat") {
-		cout << "Gene clustering matrix creation\n";
 		if (argc < 5) { cerr << "Needs at least 4 arguments\n"; std::exit(0); }
 		ClStr2Mat* cl = new ClStr2Mat(opts);// opts->input, opts->output, opts->map, opts->referenceDir, opts->calcCoverage, opts->oldMapStyle);
-		
 		delete cl;
-		cout << "Finished Gene matrix conversion\n";
 		std::exit(0);
 	}
 	else if (mode == "swap") {
-		cout << "Swap mode" << std::endl;
+		std::cout << "Swap mode" << std::endl;
 		vector < vector < vector < string > >> tmpMatFiles(opts->write);
 		rareExtremLowMem(opts,  opts->write, arg4, opts->repeats, numThr, opts->writeSwap);
 		printf("Time taken: %.2fs\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
 		std::exit(0);
 	}
 	else if (mode == "memory") {
-		cout << "Loading input matrix to memory" << std::endl;
+		std::cout << "Loading input matrix to memory" << std::endl;
 		Matrix* Mo = new Matrix(opts, "");//no arg for outfile &  hierachy | gene subset
 		vector<DivEsts*> divvs(Mo->smplNum(), NULL);
 		vector< string > rowNames = Mo->getRowNames();
-		cout << "Done loading matrix" << std::endl;
+		std::cout << "Done loading matrix" << std::endl;
 
 		// transform all percentage sizes into correct values
 		for(uint i = 0; i < opts->depth.size(); i++){
@@ -904,12 +909,12 @@ int main(int argc, char* argv[])
 						thirds = (int) ceil((smpls-3)/3);
 					}
 					if(i < 3 || i % thirds == 0  ){
-						cout << "At Sample " << i+1 << " of " << smpls << " Samples" << std::endl  ;
+						std::cout << "At Sample " << i+1 << " of " << smpls << " Samples" << std::endl  ;
 						if(i > 3 && i % thirds == 0 ){
-							cout << "..." << std::endl ;
+							std::cout << "..." << std::endl ;
 						}
 					}else if( i == 3){
-						cout << "..." << std::endl ;
+						std::cout << "..." << std::endl ;
 					}
 
 					i++;
@@ -978,11 +983,11 @@ int main(int argc, char* argv[])
 		writeGlobalDiv(opts, ICE, ACE, chao2, opts->output + "global_diversity.tsv");
 
 		printf("CPU time taken: %.2fs\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
-		//cout << "Finished\n";
+		//std::cout << "Finished\n";
 		std::exit(0);
 	}
 	else {
-		cout << "rtk run mode \"" << mode << "\" undefined.\nSee ./rtk -h for more information.\n";
+		std::cout << "rtk run mode \"" << mode << "\" undefined.\nSee ./rtk -h for more information.\n";
 		//helpMsg();
 	}
 

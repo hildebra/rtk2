@@ -23,7 +23,7 @@ all: $(program_NAME)
 
 $(program_NAME): $(program_OBJS)
 	echo "LINK: $(LINK.cc) "
-	$(LINK.cc) $(program_OBJS) -o $(program_NAME)  $(LDLIBS) 
+	$(LINK.cc) $(program_OBJS) -o $(program_NAME)  $(LDLIBS) -static 
 
 
 clean:

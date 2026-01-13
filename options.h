@@ -126,6 +126,8 @@ public:
 	bool check4idxMatch;//assummes tab separated row name, that is number (idx); used in "lineExtr", "extractRows"
 	bool gzOut;
 	bool header;
+	bool calcSupplCov;//for "geneMat" -> calc also abundance for suppl coverage?
+
 
 	std::string modDescr;
 	std::string modHiera;

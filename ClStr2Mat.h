@@ -13,6 +13,12 @@ const string path2abundance = "/assemblies/metag/ContigStats/Coverage.pergene";
 const string path2counts = "/assemblies/metag/ContigStats/Coverage.count_pergene";
 const string path2mediAB = "/assemblies/metag/ContigStats/Coverage.median.pergene";
 
+const string path2abundanceSup = "/assemblies/metag/ContigStats/Cov.sup.pergene";
+const string path2countsSup = "/assemblies/metag/ContigStats/Cov.sup.count_pergene";
+const string path2mediABSup = "/assemblies/metag/ContigStats/Cov.sup.median.pergene";
+
+const string path2skip = "SMPL.empty";
+
 const string pseudoAssMarker = "/assemblies/metag/longReads.fasta.filt.sto";
 
 //typedef std::unordered_map<uint, uint>::iterator SmplAbunIT;
@@ -54,8 +60,17 @@ struct clusWrk {
 //clusWrk* workClusBlock(textBlock*, const size_t, const string& sampleSeq,const vector<GeneAbundance*>& GAs, const SmplOccurMult*, long);
 void printVec(clusWrk * curClus, ostream*, ofstream*);// , const vector<bool>& useSmpl);
 
-
-
+/*
+class GeneAbds
+{
+public:
+	GeneAbds() {}
+	void addGA(GeneAbundance*, string SmplID){}
+private:
+	vector<GeneAbundance*> GAs;
+	vector<string> smpls;
+};
+*/
 
 class ClStr2Mat
 {
@@ -65,6 +80,7 @@ public:
 		//const  string inF, const string outF, const string mapF, const string baseP, 	bool covCalc, bool oldMap);
 	virtual ~ClStr2Mat();
 	smat_fl GAabundance(int idxM, string& gene) { return GAs[idxM]->getAbundance(gene); }
+	smat_fl GASupAbundance(int idxM, string& gene) { return GAsSup[idxM]->getAbundance(gene); }
 	void addSums(clusWrk* curClus) {
 		const vector<smat_fl>& pr = curClus->Vec;
 		sumMtx.lock();
@@ -73,7 +89,7 @@ public:
 		}
 		sumMtx.unlock();
 	}
-	clusWrk* workClusBlock(textBlock* inVs, long CLidx);
+	clusWrk* workClusBlock(textBlock* inVs, long CLidx,bool);
 private:
 	struct job {
 		std::future <clusWrk*> fut;
@@ -83,7 +99,10 @@ private:
 		std::future <void> fut;
 		bool inUse = false;
 	};
-	void read_map(const string, bool, bool,  bool, string&);
+	string getPath2Ab(options* opts, bool suppl=false);
+	void read_map(const string, string&, options* opt);
+	bool mapGrpCnt(SmplOccur& currCntMpGr,
+		SmplOccurMult& CntMapGrps, int i, bool suppl);
 	//void read_abundances(SmplOccurMult&, string, bool, bool, bool);
 	void sealMap();
 
@@ -91,25 +110,29 @@ private:
 	//takes care of output
 	void manage_write(clusWrk* curClus);
 	void finish_write();
+	
+	
 	long lastClIdWr;
 	list<clusWrk*> tmpSave;
 	//unordered_map<long, clusWrk*> tmpSave;
 	//core routines (con be parralelized later)
 
 
-	vector<GeneAbundance*> GAs;
-	ContigCrossHit* CCH;
+	vector<GeneAbundance*> GAs, GAsSup;
+	//currently not being used
+	//ContigCrossHit* CCH;
 	SmplOccurMult smpls;
-	string2string smplRid;
+	string2string smplRid;//translation of sample IDs to include assmbleGrp cnter..
+	vector<int> smplSupIdx; //translate where suppl abundance samples are relative to output matrix
 	vector<string> smplLoc; // only needed in readmap
 	//vector<string> baseP; // only needed in readmap
-	vector<string> mapGr;
 	//vector<bool> useSmpl; // potentially slow, but simple
+	vector<string> mapGr;
 	vector<smat_fl> SmplSum;
-	size_t smplN;
-	size_t curr ;
-	string lastline;
-	string sampleSeq;
+	size_t smplN, smplNsup;
+	//size_t curr ;
+	//string lastline;
+	string sampleSep;
 	//output IO
 	ostream* matO;
 	ofstream* geneNames;

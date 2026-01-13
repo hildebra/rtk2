@@ -222,10 +222,14 @@ void writeGlobalDiv(options* opts, vector<vector<mat_fl>>& ICE, vector<vector<ma
 class GeneAbundance
 {
 public:
-	GeneAbundance(const string, const string);
+	GeneAbundance(const string, const string, bool);
 	smat_fl getAbundance(const string);
+	bool isEmpty() { return isEmp; }
+	long getTotalCnts() { mat_fl total(0); for (auto ix : GeneAbu) { total += ix.second; }  return (long)total; }
 private:
-	bool isPsAss;
+	bool isPsAss; // is PsAssembly
+	bool isSuppl;
+	bool isEmp;
 	SmplAbun GeneAbu;
 	//vector<int> ContigID;
 

@@ -27,8 +27,13 @@ void printVec(clusWrk * curClus, ostream* mO, ofstream* gN) {//, const vector<bo
 	delete curClus;
 }
 clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs, 
-	 long CLidx) {
-	clusWrk* ret = new clusWrk(smplN, CLidx);
+	 long CLidx, bool doSups) {
+	clusWrk* ret(nullptr);
+	if (!doSups) {
+		ret = new clusWrk(smplN, CLidx);
+	} else {
+		ret = new clusWrk(smplNsup, CLidx);
+	}
 	bool repFound = false;
 	for (uint i = 0; i < inVs->txt.size(); i++) {
 		string &line = inVs->txt[i];
@@ -49,7 +54,7 @@ clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs,
 		}
 
 		//bool geneInAssembl(true);
-		pos = gene.find(sampleSeq);
+		pos = gene.find(sampleSep);
 		string sample;
 		//SmplOccurITmult smNum;
 		pos2 = gene.find("_L", pos + 3);
@@ -77,6 +82,14 @@ clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs,
 				//3 add to matrix / output vector
 				ret->Vec[idxM] += this->GAabundance(idxM, gene);//abundance;
 				//SmplSum[idxM] += abundance;
+			}
+			if (doSups) {
+				for (size_t jj = 0; jj < smplLocs.size(); jj++) { //the loop takes account for multiple samples being grouped together in map
+					int idxM = smplLocs[jj];
+					if (smplSupIdx[idxM] != -1) {
+						ret->Vec[smplSupIdx[idxM]] += this->GASupAbundance(idxM, gene);
+					}
+				}
 			}
 		}
 		else {
@@ -107,10 +120,15 @@ clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs,
 
 
 
-ClStr2Mat::ClStr2Mat(options* opts):
-	lastClIdWr(1),GAs(0), CCH(NULL),smplLoc(0), //baseP(0), 
-	mapGr(0), SmplSum(0), smplN(0), curr(-1),
-	lastline(""), sampleSeq("__"){
+ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
+	smplLoc(0), //baseP(0), 
+	mapGr(0),SmplSum(0),
+	smplN(0), smplNsup(0),
+	sampleSep("__")
+{
+
+	std::cout << "Gene clustering matrix creation\n";
+
 	ifstream incl2;
 	//FILE* incl;
 	const string inF = opts->input;
@@ -118,6 +136,8 @@ ClStr2Mat::ClStr2Mat(options* opts):
 	const string mapF = opts->map;
 	//const string basePX = opts->referenceDir;
 	const bool doGZ = opts->gzOut;
+	//flag whether supplementary abundances will be included in output matrix
+	const bool calcSupplCov = opts->calcSupplCov;
 	//set up baseP
 	//stringstream ss(basePX); string segments;
 	//while (getline(ss, segments,',') ) { baseP.push_back(segments); }
@@ -138,9 +158,9 @@ ClStr2Mat::ClStr2Mat(options* opts):
 	if (doGZ) {
 #ifdef _gzipread
 		matO = new ogzstream(outF2.c_str(), ios::out);
-		cout << "Writing gzip'd matrix\n";
+		std::cout << "Writing gzip'd matrix\n";
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else {
@@ -162,11 +182,11 @@ ClStr2Mat::ClStr2Mat(options* opts):
 	stringstream ss2(mapF);  string segments;
 	while (getline(ss2, segments, ',')) {
 		string baseP = ""; //SmplOccurMult CntMapGrps ;
-		read_map(segments, opts->calcCoverage, opts->calcCovMedian, opts->oldMapStyle, baseP);
+		//also reads abundances
+		read_map(segments,  baseP, opts);
 		//read_abundances(CntMapGrps, baseP, opts->calcCoverage, opts->calcCovMedian, opts->oldMapStyle);
 		
 	}
-
 
 	//smplnames in out matrix
 	vector<string> SmplNmsVec(smplN, "");
@@ -175,23 +195,41 @@ ClStr2Mat::ClStr2Mat(options* opts):
 		if (XX.size() == 0) { continue; }
 		SmplNmsVec[ XX[XX.size()-1] ] = smplRid[(*it).first];
 	}
-	cout << "Calculating abundance matrix on "<< smplN <<" samples (this may take awhile)\n";
+	std::cout << "Calculating abundance matrix on "<< smplN <<" samples (this may take awhile)\n";
 	(*matO) << "Genes";
 	for (size_t i = 0; i < SmplNmsVec.size(); i++) {
 		//if (!useSmpl[i]) { continue; }
 		(*matO) << "\t" << SmplNmsVec[i];
 	}
+	SmplSum.resize(smplN, 0.f);
+	if (calcSupplCov) {
+		//some basic assertions..
+		assert(SmplNmsVec.size() == GAsSup.size());
+		assert(GAs.size() == GAsSup.size());
+		int supcnt = GAsSup.size();
+		smplSupIdx.resize(GAsSup.size(), -1);
+		for (size_t i = 0; i < SmplNmsVec.size(); i++) {
+			//if (!useSmpl[i]) { continue; }
+			if (!GAsSup[i]->isEmpty()) {
+				(*matO) << "\t" << SmplNmsVec[i] + ".sup";
+				smplSupIdx[i] = supcnt; supcnt++;
+			}
+		}
+		smplNsup = supcnt;
+		SmplSum.resize(smplNsup, 0.f);
+	}
+
+
 	(*matO) << endl;
 
 	(*geneNames) << "#GID\tCluster\tRepSeq\n";
-	CCH = new ContigCrossHit((int)smplN);
-	CCH->setSmplNms(SmplNmsVec);
+	//CCH = new ContigCrossHit((int)smplN);
+	//CCH->setSmplNms(SmplNmsVec);
 	//SparseMatrix * mat = new SparseMatrix();
 	long CLidx = 2; //start at number 2
 	//const string sampleStrSep = "__";
-	sampleSeq = "__";
+	//sampleSep = "__";
 	//vector<smat_fl> SmplSum(smplN, 0.f);
-	SmplSum.resize(smplN, 0.f);
 	
 	int numthr = opts->threads-1;// -1 to include wrThr
 	if (numthr <= 0) { numthr = 1; }
@@ -208,8 +246,9 @@ ClStr2Mat::ClStr2Mat(options* opts):
 	//readThr = async(std::launch::async, getClusBlock, incl, lastline);
 	//readThr = async(std::launch::async, test);
 
-	int j = 0;
-	int tCnt = 0;
+	int j (0);
+	int tCnt (0);
+	long total_Counts(0);
 
 	while (true) {
 		clbl = getClusBlock(incl2, lastline);
@@ -232,7 +271,7 @@ ClStr2Mat::ClStr2Mat(options* opts):
 				//printVec( curClus, matO, geneNames);
 			}
 			if (slots[j].inUse == false) {
-				slots[j].fut = async(std::launch::async, &ClStr2Mat::workClusBlock, this, clbl, CLidx);
+				slots[j].fut = async(std::launch::async, &ClStr2Mat::workClusBlock, this, clbl, CLidx, calcSupplCov);
 				CLidx++;
 				slots[j].inUse = true;
 				break;//job submitted, break search for empty thread
@@ -256,7 +295,11 @@ ClStr2Mat::ClStr2Mat(options* opts):
 	finish_write();
 	finish_write();
 
-	cout << "Read/wrote " << tCnt << " total genes in matrix\n";
+	for (size_t i = 0; i < SmplNmsVec.size(); i++) {
+		total_Counts += SmplSum[i];
+	}
+
+	std::cout << "Read/wrote " << tCnt << " total genes counting to " << total_Counts<< " counts in matrix\n";
 	
 
 	incl2.close();
@@ -267,19 +310,33 @@ ClStr2Mat::ClStr2Mat(options* opts):
 	delete matO; delete geneNames;
 
 	ofstream* matS = new ofstream((outF + ".mat.sum"), ofstream::out);
-	
-	//matS.open(outF + ".mat.sum", ofstream::out);
-	//print sample sum
 	for (size_t i = 0; i < SmplNmsVec.size(); i++) {
 		//if (!useSmpl[i]) { continue; }
-		//cout << SmplNmsVec[i] << "\t" << SmplSum[i] << endl;
+		//std::cout << SmplNmsVec[i] << "\t" << SmplSum[i] << endl;
 		(*matS) << SmplNmsVec[i] << "\t" << SmplSum[i] << endl;
 	}
+	if (smplN < smplNsup) {
+		for (size_t i = 0; i < SmplNmsVec.size(); i++) {
+			if (smplSupIdx[i] != -1) {
+				(*matS) << SmplNmsVec[i]+".sup" << "\t" << SmplSum[smplSupIdx[i]] << endl;
+			}
+		}
+
+	}
 	matS->close();  delete matS;
+	std::cout << "Finished Gene matrix conversion\n";
+
 }
+
+
+
 ClStr2Mat::~ClStr2Mat() {
 	for (size_t i = 0; i < GAs.size(); i++) { delete GAs[i]; }
-	delete CCH;
+	GAs.resize(0);
+	for (size_t i = 0; i < GAsSup.size(); i++) { delete GAsSup[i]; }
+	GAsSup.resize(0);
+	
+	//delete CCH;
 }
 void ClStr2Mat::finish_write() {
 	//if (wrThr.inUse) {		wrThr.fut.get();		wrThr.inUse = false;	}
@@ -321,10 +378,13 @@ void ClStr2Mat::manage_write(clusWrk* curClus) {
 
 }
 
-void ClStr2Mat::read_map(const string mapF, bool calcCoverage, bool calcCovMedian,  bool oldFolderStructure, string& baseP) {
+void ClStr2Mat::read_map(const string mapF, string& baseP, options* opts) {
 	ifstream in;
+	bool oldFolderStructure = opts->oldMapStyle;
+	const bool calcSupplCov = opts->calcSupplCov;
+
 	int map2folderIdx = 0; if (oldFolderStructure) { map2folderIdx = 1; }
-	curr++;//keep track of different maps and inPaths
+	//curr++;//keep track of different maps and inPaths
 	uint preMapSize((int)smplLoc.size());
 
 	in.open(mapF.c_str());
@@ -332,7 +392,7 @@ void ClStr2Mat::read_map(const string mapF, bool calcCoverage, bool calcCovMedia
 		cerr << "Couldn't open mapping file " << mapF << endl;
 		exit(56);
 	}
-	cout << "Reading map " << mapF << endl;// " on path " << baseP[curr] << endl;
+	std::cout << "Reading map " << mapF << endl;// " on path " << baseP[curr] << endl;
 	SmplOccurMult CntAssGrps;
 	string line(""); int cnt(-1); int assGrpN(-1);
 	//mapping group params
@@ -361,16 +421,16 @@ void ClStr2Mat::read_map(const string mapF, bool calcCoverage, bool calcCovMedia
 					}
 					if (segments == "AssmblGrps") {
 						assGrpN = sbcnt;
-						cout << "Found Assembly groups in map\n";
+						std::cout << "Found Assembly groups in map\n";
 					}
 					if (segments == "MapGrps") {
 						mapGrpN = sbcnt;
 						//fillMapGrp = true;
-						cout << "Found Mapping groups in map\n";
+						std::cout << "Found Mapping groups in map\n";
 					}
 					if (segments == "ExcludeAssembly") {
 						skSmplCol = sbcnt;
-						cout << "Samples can be excluded from assembly\n";
+						std::cout << "Samples can be excluded from assembly\n";
 					}
 				}
 			}
@@ -392,6 +452,8 @@ void ClStr2Mat::read_map(const string mapF, bool calcCoverage, bool calcCovMedia
 
 	//2nd part: read samples
 	SmplOccurMult CntMapGrps ;
+	
+
 	in.clear();                 // clear fail and eof bits
 	in.seekg(0, std::ios::beg); // back to the start!
 	cnt = 0;
@@ -474,52 +536,88 @@ void ClStr2Mat::read_map(const string mapF, bool calcCoverage, bool calcCovMedia
 	}
 	in.close();
 
-	//return CntMapGrps;
-
-//}
-//void ClStr2Mat::read_abundances(SmplOccurMult& CntMapGrps, string baseP, bool calcCoverage,
-	//bool calcCovMedian, bool oldFolderStructure){
 	smplN = smplLoc.size();
-	//uint geneN = 0;
-	//uint preMapSize((int)smplLoc.size());
 
-	cout << "Reading abundances from " << smplN << " samples\n";
-	//read the gene abundances sample-wise in
+	//read the gene abundances sample-wise in, primary abundance
+	std::cout << "Reading primary abundances from " << smplN << " samples\n";
 	SmplOccur currCntMpGr;
-	uint smplsIncl = 0;
+	uint smplsIncl(0), smplsInclSup(0);
+	long totalCnts(0);
 	for (uint i = preMapSize; i < smplN; i++) {
-		string pa2ab = path2counts;
-		
-		if (calcCoverage) { pa2ab = path2abundance; }
-		if (calcCovMedian) { pa2ab = path2mediAB; }
+		if (!mapGrpCnt(currCntMpGr,  CntMapGrps,i, false)) { continue; }
+		string abPath = baseP + "/" + smplLoc[i];
+#ifdef notRpackage
+		cerr << abPath << endl;
+#endif
+		//read in abundance of sample
+		GAs.push_back(new GeneAbundance(abPath, getPath2Ab(opts),false));
+		totalCnts += GAs.back()->getTotalCnts();
+		smplsIncl++;
+	}
+	std::cout << "Read primary abundances from " << smplsIncl << " samples, with "<< totalCnts<<" counts\n";// , using "<< geneN<<" genes\n";
 
-		//only include last sample of mapping group..
-		if (mapGr[i] != "") {
-			SmplOccurIT cMGcnts = currCntMpGr.find(mapGr[i]);
-			if (cMGcnts == currCntMpGr.end()) {
-				currCntMpGr[mapGr[i]] = 1;
-			}
-			else {
-				(*cMGcnts).second++;
-			}
-			if ((CntMapGrps)[mapGr[i]].size() != (uint) currCntMpGr[mapGr[i]]) {
-				GAs.push_back(new GeneAbundance("",""));
-				//useSmpl[i] = false;
-				continue;
+	if (calcSupplCov) {
+		std::cout << "\n\nScanning for supplementary abundances in  " << smplsIncl << " samples\n";// , using "<< geneN<<" genes\n";
+		//read the gene abundances sample-wise in, supplementary abundance
+		SmplOccur currCntMpGrSup;
+		for (uint i = preMapSize; i < smplN; i++) {
+			if (!mapGrpCnt(currCntMpGrSup,  CntMapGrps, i, true)) { continue; }
+
+			string abPath = baseP + "/" + smplLoc[i];
+			//read in abundance of sample
+			GAsSup.push_back(new GeneAbundance(abPath, getPath2Ab(opts, true), true));
+			if (!(GAsSup.back())->isEmpty()) {
+#ifdef notRpackage
+				cerr << abPath << endl;
+#endif
+				smplsInclSup++;
 			}
 		}
-
-		//DEBUG
-		//continue;
-
-		//read in abundance of sample
-#ifdef notRpackage
-		cerr << baseP + "/" + smplLoc[i] << endl;
-#endif
-		smplsIncl++;
-		GAs.push_back(new GeneAbundance(baseP + "/" + smplLoc[i], pa2ab));
+		if (smplsInclSup) {
+			std::cout << "Read supplementary abundances from " << smplsInclSup << " samples\n";// , using "<< geneN<<" genes\n";
+		}
 	}
-	cout << "Including " << smplsIncl << " samples\n";// , using "<< geneN<<" genes\n";
+
+
+
+}
+
+bool ClStr2Mat::mapGrpCnt(SmplOccur& currCntMpGr,  
+	SmplOccurMult& CntMapGrps, int i, bool isSuppl) {
+	if (mapGr[i] != "") {//only include last sample of mapping group..
+		SmplOccurIT cMGcnts = currCntMpGr.find(mapGr[i]);
+		if (cMGcnts == currCntMpGr.end()) {
+			currCntMpGr[mapGr[i]] = 1;
+		}
+		else { (*cMGcnts).second++; }
+		if ((CntMapGrps)[mapGr[i]].size() != (uint)currCntMpGr[mapGr[i]]) {
+			if (isSuppl) {
+				GAsSup.push_back(new GeneAbundance("", "", isSuppl));
+			} else {
+				GAs.push_back(new GeneAbundance("", "", isSuppl));
+			}
+			return false;
+		}
+	}
+	return true;
+
+}
+
+
+string ClStr2Mat::getPath2Ab(options* opts, bool suppl) {
+	string pa2ab(""); 
+	//bool calcCoverage = opts->calcCoverage;
+	//bool calcCovMedian = opts->calcCovMedian;
+	if (suppl) {
+		if (opts->calcCoverage) { pa2ab = path2abundanceSup; }
+		else if (opts->calcCovMedian) { pa2ab = path2mediABSup; }
+		else { pa2ab = path2countsSup; }
+	}else {
+		if (opts->calcCoverage) { pa2ab = path2abundance; }
+		else if (opts->calcCovMedian) { pa2ab = path2mediAB; }
+		else { pa2ab = path2counts; }
+	}
+	return pa2ab;
 }
 void ClStr2Mat::sealMap() {// only required for mapping group.. don't use
 	/*SmplOccurMult nSmpls;
@@ -553,27 +651,37 @@ void ContigCrossHit::addHit(int Smpl, int Ctg) {
 
 ///////////////////////////////////////////////////
 
-GeneAbundance::GeneAbundance(const string path, const string abunF):
-	isPsAss(false){
-	if (path == "" && abunF == "") { return; }//not required to read this (non-existant) file
+GeneAbundance::GeneAbundance(const string path, const string abunF, bool isSup):
+	isPsAss(false), isSuppl(isSup), isEmp(false){
+	if (path == "" && abunF == "") { isEmp = true; return; }//not required to read this (non-existant) file
 	//FILE* in;
 	//first test if this is a pseudoassembly
 	//in = fopen((path + pseudoAssMarker).c_str(), "r");
 	//if (in != NULL) {
 //	in = fopen(newS.c_str(), "r");
 	if (fileExists((path + pseudoAssMarker).c_str())){
-		isPsAss = true;
+		isPsAss = true; isEmp = true;
 		return;
 	}
+	if (fileExists(path + path2skip)) {
+		isEmp = true;
+		return;
+	}
+
 	//not? then read abundances
 	string newS = path + abunF;
 	//test if input is gzipped
 	string newSgz = newS + ".gz"; 
 	if (fileExists(newSgz) && !fileExists(newS)) {
 		newS = newSgz;
-		cout << "switch";
+		//std::cout << "switch";
 	}
-	cout << "FILE" << newS << endl << newSgz << endl;
+	if (isSuppl && !fileExists(newS)) {
+		isEmp = true;
+		return;
+	}
+
+	//std::cout << "FILE" << newS << endl << newSgz << endl;
 
 	//isGZfile
 
@@ -581,9 +689,9 @@ GeneAbundance::GeneAbundance(const string path, const string abunF):
 	if (isGZfile(newS)) {
 #ifdef _gzipread
 		in = new igzstream(newS.c_str(), ios::in);
-		cout << "Reading gzip input\n";
+		std::cout << "Reading gzip input\n";
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 	}
 	else {

@@ -28,9 +28,9 @@ void extractRowsMultiMat(options* opts) {
 	if (isGZfile(inF)) {
 #ifdef _gzipread
 		in = new igzstream(inF.c_str(), ios::in);
-		cout << "Reading gzip input\n";
+		std::cout << "Reading gzip input\n";
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 
 	}
@@ -62,7 +62,7 @@ void extractRowsMultiMat(options* opts) {
 	while (getline(idxS, line, '\n')) {
 		size_t pos = line.find(sepRef);
 		if (pos == std::string::npos) {
-			cout << "requires \"" << sepRef << "\" in index file: line " << cnt << "\n" << line << "\n";
+			std::cout << "requires \"" << sepRef << "\" in index file: line " << cnt << "\n" << line << "\n";
 			exit(957);
 		}
 		string Bin = line.substr(0, pos);
@@ -104,7 +104,7 @@ void extractRowsMultiMat(options* opts) {
 		cnt++;
 	}
 	idxS.close();
-	cout << "Found " << outS.size() << " categories, creating " << outS.size() << " submatrices in " << outD << endl;
+	std::cout << "Found " << outS.size() << " categories, creating " << outS.size() << " submatrices in " << outD << endl;
 	int geneCntFnd(0);
 	//guide file finished, now separate big matrix on the fly by guide index
 	int num_threads = opts->threads;
@@ -152,7 +152,7 @@ void extractRowsMultiMat(options* opts) {
 		
 		size_t pos = line.find(sep);
 		if (pos == std::string::npos) {
-			cout << "requires \"" << sep << "\" in matrix file: line " << cnt << "\n" << line << "\n";
+			std::cout << "requires \"" << sep << "\" in matrix file: line " << cnt << "\n" << line << "\n";
 			exit(958);
 		}
 		string gene = line.substr(0, pos);
@@ -172,7 +172,7 @@ void extractRowsMultiMat(options* opts) {
 
 	}
 
-	cout << "Done extracting " << geneCntFnd << " genes\n";
+	std::cout << "Done extracting " << geneCntFnd << " genes\n";
 	//clean up
 	for (uint i = 0; i < outS.size(); i++) {
 		delete outS[i];
@@ -192,9 +192,9 @@ void extractRows(options* opts){
 	if (isGZfile(inF)) {
 #ifdef _gzipread
 		in = new igzstream(inF.c_str(), ios::in);
-		cout << "Reading gzip input\n";
+		std::cout << "Reading gzip input\n";
 #else
-		cout << "gzip not supported in your rtk build\n"; exit(50);
+		std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 
 	}	else {
@@ -237,13 +237,14 @@ void extractRows(options* opts){
         cerr << "Can't open outfile " << outF << endl; std::exit(99);
 #endif
     }
+    cerr << "Searching for "<< srtTar.size()<<" targets in matrix\n";
     uint cnt(1); uint j(0);
     while (getline((*in), line, '\n')) {
         if (cnt == srtTar[j]){
 			if (check4idxMatch) {
 				size_t pos = line.find(sep);
 				if (pos == std::string::npos) {
-					cout << "requires \""<< sep<<"\" separated row name: line " << cnt << "\n"<<line<<"\n";
+					std::cout << "requires \""<< sep<<"\" separated row name: line " << cnt << "\n"<<line<<"\n";
 					exit(956);
 				}
 				string rowN = line.substr(0,pos);
@@ -269,6 +270,8 @@ void extractRows(options* opts){
         cerr << "Missed " << (srtTar.size() - j) << " entries." << endl;
 #endif
     }
+
+	cerr << "Done extracting " << cnt << " lines\n";
 }
 //****************************  smplVec::smplVec ***********
 smplVec::smplVec(const vector<mat_fl>& vec, const int nt) :IDs(0),totSum(0),
@@ -384,7 +387,7 @@ void smplVec::rarefy(vector<double> depts, string ofile, int rep,
 
         if (dep > totSum){
             skippedSample = divs->SampleName;
-            if (verbose){cout<<"skipped sample, because rowSums < depth \n";}
+            if (verbose){std::cout<<"skipped sample, because rowSums < depth \n";}
             return;
         }
         //long curIdx=(long)totSum+1;
@@ -640,7 +643,7 @@ void smplVec::print2File(const vector<unsigned int>& cnts,const string t_out){
         }
     }
     out.close();
-    //cout<<"Richness: "<<richness<<endl;
+    //std::cout<<"Richness: "<<richness<<endl;
     //return richness;
 }
 
@@ -663,7 +666,7 @@ ulong trng;
 
 unsigned long pos = (unsigned long)totSum- 1;
 while ( pos > 0) {
-//cout << pos<<" ";
+//std::cout << pos<<" ";
 //Launch a group of threads
 for (int t = 0; t < num_threads; ++t) {
 futures[t] = async(thr_rng,pos-t,rng_P[t]);
@@ -1341,7 +1344,7 @@ vector<string> getMMSeqsClus(FILE* incl, string &lastline,bool& cont) {
 
 		ret.push_back(curLine.substr(pos+1));
 		if (ret[ret.size()-1] == "") { cerr << "empty entry" << curLine << endl; exit(232); }
-		//cout << ret[0] << "   XX  " << ret[1] << endl << curLine << endl;
+		//std::cout << ret[0] << "   XX  " << ret[1] << endl << curLine << endl;
 		//exit(50);
 
 
