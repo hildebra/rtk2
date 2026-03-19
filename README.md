@@ -1,5 +1,4 @@
-<p align="center"><img src="/adds/RTK2logo.png?raw=true" alt="RTK2 logo" width=400 align="left"></img></p>
-
+<p align="center"><img src="/adds/RTK2logo.png?raw=true" alt="RTK2 logo" width=400 align="left"></img></p>  
 
 # rtk
 
