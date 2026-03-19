@@ -1,6 +1,8 @@
 # rtk
 <p align="center"><img src="/adds/RTK2logo.png?raw=true" alt="RTK2 logo" width=300 align="left"></img></p>
-[![Action CI](https://github.com/hildebra/rtk2/actions/workflows/test.yml/badge.svg)](https://github.com/hildebra/rtk2/actions/workflows/test.yml)
+
+
+//  [![Action CI](https://github.com/hildebra/rtk2/actions/workflows/test.yml/badge.svg)](https://github.com/hildebra/rtk2/actions/workflows/test.yml)  
 
 ## Quickstart
 
