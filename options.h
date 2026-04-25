@@ -35,7 +35,9 @@
 #else
 #define _gzipread
 #endif
+#ifndef notRpackage
 #define notRpackage
+#endif
 
 
 #ifdef _gzipread

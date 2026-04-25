@@ -25,8 +25,8 @@ class column{
 };
 
 struct rowRes {
-	rowRes(vector<mat_fl>& x) :rowV(x), NAcnt(0), curRowIdx(0), rowID(""), taxa(0), Occ(0) {}
-	rowRes(int s) :rowV(s, (mat_fl)0), NAcnt(0), curRowIdx(0), rowID(""), taxa(0), Occ(0) {}
+	rowRes(vector<mat_fl>& x) :rowV(x), taxa(0), NAcnt(0), curRowIdx(0), Occ(0), rowID("") {}
+	rowRes(int s) :rowV(s, (mat_fl)0), taxa(0), NAcnt(0), curRowIdx(0), Occ(0), rowID("") {}
 	vector<mat_fl> rowV;
 	vector<string> taxa;
 	int NAcnt;
@@ -49,7 +49,7 @@ public:
 	void set(string& kk, vector<mat_fl>& v);
 	void prep();
 	vector<string>& getFeatures() { return FeatureNs; }
-	vector<mat_fl>& getRow(uint x, bool mean=false);
+	vector<mat_fl> getRow(uint x, bool mean=false);
 
 	void print(ofstream&,bool,int, int);
 	void filter(bool mean,int occMin, int occPerSmpl);
@@ -213,7 +213,7 @@ public:
 	void decluter2(options*);//mmseqs2 version
 	void writeMatrix(const string ofile,bool onlyFilled=false,int threads=1);
 	size_t smplNum(){ return colIDs.size(); }
-	int rowNum(){ return rowIDs.size(); }
+	int rowNum(){ return static_cast<int>(rowIDs.size()); }
 
 	smplVec* getSampleVec(uint which){ return new smplVec(mat[which],1); }
 	string getSampleName(uint which){ return colIDs[which]; }

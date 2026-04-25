@@ -10,7 +10,8 @@
 //2.12: 30.4.24: fix open .gz in geneMat mode
 //2.13: 2.5.24: print suppl coverage of samples
 //2.14: 13.1.26: just some additional counts for geneMatrix mode
-const char* rar_ver="2.14";
+//2.15: 25.4.26: extra safety for extractRows function
+const char* rar_ver="2.15";
 
 
 rareStruct* calcDivRar(int i, Matrix* Mo, DivEsts* div, options* opts,

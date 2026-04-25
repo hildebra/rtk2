@@ -258,9 +258,9 @@ mat_fl Module::pathAbundance(const vector<mat_fl>& v, const unordered_map<string
 		//ini decIdx
 		for (size_t i = 0; i < steps.size(); i++) {
 			size_t dI = 0; double maxAB = 0;
-			while (dI < uint(active[i].size())) {
+			while (dI < active[i].size()) {
 				if (abunds[i][dI] > maxAB && active[i][dI]) {
-					decIdx[i] = dI;
+					decIdx[i] = static_cast<int>(dI);
 					maxAB = abunds[i][decIdx[i]];
 				}
 				dI++;
@@ -345,16 +345,16 @@ Modules::Modules(const string& inF, vector<string> cns) :
 		rowIDs[i] = mods[i].name;
 		//and track position
 		if (ModPos.find(rowIDs[i]) == ModPos.end()) {
-			ModPos[rowIDs[i]] = vector<int>(1, i);
+			ModPos[rowIDs[i]] = vector<int>(1, static_cast<int>(i));
 		}
 		else {
-			ModPos[rowIDs[i]].push_back(i);
+			ModPos[rowIDs[i]].push_back(static_cast<int>(i));
 		}
 	}
 	//finished off all ModPos entries..
 	for (size_t i = 0; i < mods.size(); i++) {
 		if (mods[i].containsMods) {
-			recurrentMods.push_back(i);
+			recurrentMods.push_back(static_cast<int>(i));
 			for (size_t j = 0; j < mods[i].submods.size(); j++) {
 				bool doAddThMod(true);
 				for (size_t k = 0; k < redundantUsedMods.size(); k++) {
@@ -559,7 +559,7 @@ vector<string> Modules::modNms_numbered() {
 	for (auto it = ModPos.begin(); it != ModPos.end(); ++it) {
 		vector<int> pps = it->second;
 		for (size_t i = 0; i < pps.size(); i++) {
-			out[pps[i]] += "." + itos(i);
+			out[pps[i]] += "." + itos(static_cast<int>(i));
 		}
 	}
 	return out;
@@ -630,9 +630,9 @@ void Modules::calcModAbund( vector<mat_fl>& v, const int pos, const unordered_ma
 
 //*********************************************************
 Matrix::Matrix(void)
-	:rowIDs(0), colIDs(0), maxCols(0), HI(0), maxLvl(0), sampleNameSep(""), 
-	doSubsets(false), doHigh(false),CoEx_minp(0.f), coexcl_thr(0),CoEx_thresh(0.f), fet(nullptr), sparse(true)
-	, loadPrimaryMat(false)
+	:rowIDs(0), colIDs(0), HI(0), maxLvl(0), sampleNameSep(""),
+	doSubsets(false), doHigh(false), colSum(0), rowOcc(0), maxCols(0), coexcl_thr(0), CoEx_thresh(0.f), CoEx_minp(0.f), fet(nullptr), sparse(true),
+	loadPrimaryMat(false)
 {
 }
 
@@ -695,8 +695,8 @@ int Matrix::iniCols(istream* in, const char sep) {
 }
 Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vector<string> colNms,
 	const char sep, options* opts)
-	: rowIDs(0), colIDs(0), maxCols(0), HI(0), maxLvl(0), sampleNameSep(""), 
-	doSubsets(false), doHigh(false), sparse(false),loadPrimaryMat(false)
+	: rowIDs(0), colIDs(0), HI(0), maxLvl(0), sampleNameSep(""),
+	doSubsets(false), doHigh(false), colSum(0), rowOcc(0), maxCols(0), coexcl_thr(0), CoEx_thresh(0.f), CoEx_minp(0.f), sparse(false), loadPrimaryMat(false)
 {
 	//reads matrix from HDD
 	//and writes it simultaneously to single files
@@ -752,9 +752,8 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 	}
 
 
-	int cnt(-1), geneCnt(0);
+	int geneCnt(0);
 	string SEP = "\t";
-	stringstream ss;
 
 
 	//create header of normalized matrix..
@@ -795,7 +794,7 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 			if (!(*in)) { break; }
 			line = safeGetline2(in);
 			if (wrTmp.length() > 1e5) {//outstream handling..
-				bool x = wrStr.get();		
+				wrStr.get();
 				wrStr = async(std::launch::async, writeChunk, out, wrTmp);
 				//writeChunk(out, wrTmp);
 				wrTmp = "";
@@ -812,7 +811,7 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 			rowCnt++;
 		}
 	}
-	bool x = wrStr.get();
+	wrStr.get();
 	(*out) << wrTmp;
 
 	/*
@@ -878,8 +877,8 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 
 Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 			bool highLvl, bool NumericRowId, bool writeTmpFiles)
-	: rowIDs(0), colIDs(0), maxCols(0), HI(nullptr), maxLvl(0), sampleNameSep(""), 
-	doSubsets(false), doHigh(highLvl), colSum(0), rowOcc(0), sparse(true), loadPrimaryMat(false)
+	: rowIDs(0), colIDs(0), HI(nullptr), maxLvl(0), sampleNameSep(""),
+	doSubsets(false), doHigh(highLvl), colSum(0), rowOcc(0), maxCols(0), coexcl_thr(0), CoEx_thresh(0.f), CoEx_minp(0.f), sparse(true), loadPrimaryMat(false)
 {
 	//this implementation doesn't load the matrix into memory, just creates searches and sum stats
 	const string inF = opts->input;
@@ -1074,8 +1073,8 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 }
 
 Matrix::Matrix(options* opts, const string xtra, bool highLvl)
-	: rowIDs(0), colIDs(0), maxCols(0), HI(nullptr), maxLvl(0), sampleNameSep(""), 
-	doSubsets(false), doHigh(highLvl), sparse(opts->sparse), loadPrimaryMat(true)
+	: rowIDs(0), colIDs(0), HI(nullptr), maxLvl(0), sampleNameSep(""),
+	doSubsets(false), doHigh(highLvl), colSum(0), rowOcc(0), maxCols(0), coexcl_thr(0), CoEx_thresh(0.f), CoEx_minp(0.f), sparse(opts->sparse), loadPrimaryMat(true)
 {
 	const string inF = opts->input;
 	const char sep = opts->sepChar;
@@ -1240,7 +1239,6 @@ rowRes* Matrix::processLine2Mat1(string  line, int cntNA,
 	stringstream ss;
 	ss << line;
 	vector<string> taxa(0);
-	bool breaker(false);
 	int cnt2(-2);
 	//tmp objects to reduce mutex use
 	//unordered_map<int, mat_fl> tmpSparse;
@@ -1254,11 +1252,9 @@ rowRes* Matrix::processLine2Mat1(string  line, int cntNA,
 		if (cnt2 == -1) {//this is the row ID
 			rowID = segments;
 			if (rowID == "mapped") {//to deal with mocat files
-				breaker = true;
 				break;
 			}
 			if (doSubsets && subset.find(rowID) == subset.end()) {
-				breaker = true;
 				break;
 			}
 			//set index for rows..
@@ -1322,7 +1318,7 @@ string Matrix::prepRow(rowRes* ret, string SEP, bool normalize ) {
 	std::stringstream retStr;
 	retStr << setprecision(9) << ret->rowID;
 
-	for (uint i = 0; i < ret->rowV.size(); i++) {
+	for (size_t i = 0; i < ret->rowV.size(); i++) {
 		if (colSum[i] == 0) {
 			retStr << SEP << "0";
 		} else if (normalize) {
@@ -1344,7 +1340,7 @@ void Matrix::addRow(rowRes* ret){
 	
 	//single core'd
 	lock_guard<mutex> lock(protect);
-	rowID_hash[ret->rowID] = curRowIdx;
+	rowID_hash[ret->rowID] = static_cast<int>(curRowIdx);
 	if (rowIDs.size() <= curRowIdx) {
 		rowIDs.resize((curRowIdx+1), "");
 	}
@@ -1358,7 +1354,7 @@ void Matrix::addRow(rowRes* ret){
 		if (loadPrimaryMat) {
 			if (sparse) {
 				if (ret->rowV[i] > 1e-15) {
-					matSp[i][curRowIdx] = ret->rowV[i];
+					matSp[i][static_cast<uint>(curRowIdx)] = ret->rowV[i];
 				}
 			}
 			else {
@@ -1527,7 +1523,7 @@ void Matrix::mergeRows(vector<int>& idx) {
 }
 
 declutRes* Matrix::declutCalc(vector<string>* txt, options* opts) {
-	int nsize = txt->size() - 1;
+	int nsize = static_cast<int>(txt->size()) - 1;
 	//vector<string> curClus(nsize, "");
 	vector<float> clusIDs(nsize, 0.f);
 	declutRes* dRes = new declutRes(nsize);
@@ -1547,7 +1543,7 @@ declutRes* Matrix::declutCalc(vector<string>* txt, options* opts) {
 }
 
 declutRes* Matrix::declutCalc2(vector<string>* txt, options* opts) {
-	int nsize = txt->size() - 1;
+	int nsize = static_cast<int>(txt->size()) - 1;
 	//vector<string> curClus(nsize, "");
 	declutRes* dRes = new declutRes(nsize);
 	vector<float> clusIDs(nsize, 0.f);
@@ -1620,7 +1616,7 @@ void Matrix::decluter(options* opts) {
 				list << join(dR->smpls[j], ",") << endl;
 				this->mergeRows(dR->idxs[j]);
 			}
-			cases += dR->curClus.size() - dR->idxs.size();
+			cases += static_cast<int>(dR->curClus.size() - dR->idxs.size());
 			delete dR;
 		}
 		if (slots[j].inUse == false) {
@@ -1648,7 +1644,7 @@ void Matrix::decluter(options* opts) {
 				list << join(dR->smpls[j], ",") << endl;
 				this->mergeRows(dR->idxs[j]);
 			}
-			cases += dR->curClus.size() - dR->idxs.size();
+			cases += static_cast<int>(dR->curClus.size() - dR->idxs.size());
 			delete dR;
 		}
 	}
@@ -1719,7 +1715,7 @@ void Matrix::decluter2(options* opts) {
 				list << join(dR->smpls[j], ",") << endl;
 				this->mergeRows(dR->idxs[j]);
 			}
-			cases += dR->curClus.size() - dR->idxs.size();
+			cases += static_cast<int>(dR->curClus.size() - dR->idxs.size());
 			delete dR;
 		}
 		if (slots[j].inUse == false) {
@@ -1774,7 +1770,7 @@ void Matrix::decluter2(options* opts) {
 				list << join(dR->smpls[j], ",") << endl;
 				this->mergeRows(dR->idxs[j]);
 			}
-			cases += dR->curClus.size() - dR->idxs.size();
+			cases += static_cast<int>(dR->curClus.size() - dR->idxs.size());
 			delete dR;
 		}
 	}
@@ -1868,11 +1864,11 @@ void Matrix::estimateModuleAbund(options* opts) {
 	//get modules that are used in red mods and add them to inKOmatrix )(this matrix)
 	vector<string> recUsedMods= modDB->getRedundantUsedMods();
 	for (size_t i = 0; i < recUsedMods.size(); i++) {
-		rowID_hash[recUsedMods[i]] = rowIDs.size() ;
+		rowID_hash[recUsedMods[i]] = static_cast<int>(rowIDs.size()) ;
 		rowIDs.push_back(recUsedMods[i]);
 	}
 	//and resize mat
-	resizeMatRows(rowIDs.size());
+	resizeMatRows(static_cast<uint>(rowIDs.size()));
 
 	//modWrXtraInfo
 	
@@ -1949,7 +1945,7 @@ void Matrix::addColumn(string cname) {
 }
 void Matrix::addRow(string rname,vector<mat_fl> in) {
 	rowIDs.push_back(rname);
-	int curRows = mat[0].size();
+	int curRows = static_cast<int>(mat[0].size());
 	rowID_hash[rname] = curRows;
 	for (uint i = 0; i < mat.size(); i++) {
 		mat[i].push_back(in[i]);
@@ -2199,7 +2195,7 @@ void Matrix::read_hierachy(const string xtra, options* opts){// bool xtdHiera){
 	for (auto pseudo1 : LUp) {
 		vector<string> pseudo = pseudo1.second;
 		//string tmp = pseudo[mostResolved];
-		for (size_t ix = 0; ix < maxLvl ; ix++) {
+		for (int ix = 0; ix < maxLvl ; ix++) {
 			if ((pseudo[ix] == "?")) { continue; }
 			auto fnd = hiera[ix ].find(pseudo[mostResolved]);
 			if (fnd == hiera[ix ].end()) {
@@ -2349,7 +2345,7 @@ void HigherMats::createHighMats() {
 	HMat* rM = HI[mostResolved];
 	vector<string> rFs = rM->getFeatures();
 	for (size_t R = 0; R < rFs.size(); R++) {
-		vector<mat_fl> row = rM->getRow(R);
+		vector<mat_fl> row = rM->getRow(static_cast<uint>(R));
 		for (int i = 0; i < mostResolved; i++) {
 			auto fnd = hiera[i].find(rFs[R]);
 			if (fnd == hiera[i].end()) {
@@ -2572,14 +2568,14 @@ void HMat::rmRow(vector<bool>& rms) {
 	maxCatCnt = maxCatCnt2;
 }
 
-vector<mat_fl>& HMat::getRow(uint x, bool mean) {
+vector<mat_fl> HMat::getRow(uint x, bool mean) {
 	if (mean) {
 		vector<mat_fl> ret = mat[x];	
 		for (size_t j = 0; j < SampleNs.size(); j++) {
 			if (catCnt[x][j] == 0) {
-				ret[x] = 0;
+				ret[j] = 0;
 			} else {
-				ret[x] = (mat[x][j] / (mat_fl)catCnt[x][j]);
+				ret[j] = (mat[x][j] / (mat_fl)catCnt[x][j]);
 			}
 		}
 		return	ret;

@@ -30,9 +30,9 @@ clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs,
 	 long CLidx, bool doSups) {
 	clusWrk* ret(nullptr);
 	if (!doSups) {
-		ret = new clusWrk(smplN, CLidx);
+		ret = new clusWrk(static_cast<int>(smplN), CLidx);
 	} else {
-		ret = new clusWrk(smplNsup, CLidx);
+		ret = new clusWrk(static_cast<int>(smplNsup), CLidx);
 	}
 	bool repFound = false;
 	for (uint i = 0; i < inVs->txt.size(); i++) {
@@ -206,7 +206,7 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 		//some basic assertions..
 		assert(SmplNmsVec.size() == GAsSup.size());
 		assert(GAs.size() == GAsSup.size());
-		int supcnt = GAsSup.size();
+		int supcnt = static_cast<int>(GAsSup.size());
 		smplSupIdx.resize(GAsSup.size(), -1);
 		for (size_t i = 0; i < SmplNmsVec.size(); i++) {
 			//if (!useSmpl[i]) { continue; }
@@ -248,7 +248,7 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 
 	int j (0);
 	int tCnt (0);
-	long total_Counts(0);
+	double total_Counts(0);
 
 	while (true) {
 		clbl = getClusBlock(incl2, lastline);
@@ -707,7 +707,7 @@ GeneAbundance::GeneAbundance(const string path, const string abunF, bool isSup):
 		cerr << "Couldn't open gene abundance file " << newS << endl;
 		exit(36);
 	}
-	char buf[400];
+	// char buf[400];
 	/*while (fgets(buf, sizeof buf, in) != NULL) {
 		smat_fl abu; char gene[300];
 		bool wrk = sscanf(buf, "%s\t%f",  gene, &abu);

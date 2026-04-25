@@ -7,7 +7,7 @@ double FET::ulogHypergeometricProb(int a, int b, int c, int d) {
 
 
 void FET::uinitLogFacs(uint n) {
-	unsigned int curLFs = logFacs.size();
+	uint curLFs = static_cast<uint>(logFacs.size());
 	if ((n + 1) > curLFs) {
 		lock_guard<mutex> guard(protect);
 		logFacs.resize(n + 1);

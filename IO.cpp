@@ -37,14 +37,19 @@ void extractRowsMultiMat(options* opts) {
 	else {
 		in = new ifstream(inF.c_str());
 	}
+    if (!(*in)) {
+#ifdef notRpackage
+        cerr << "Can't open infile " << inF << endl; std::exit(99);
+#endif
+        delete in;
+        return;
+    }
 	string headerStr = "";
 	if (opts->header) {
-		getline((*in), headerStr,'\n');
-	}
-	if (!(*in)) {
-#ifdef notRpackage
-		cerr << "Can't open infile " << inF << endl; std::exit(99);
-#endif
+        if (!getline((*in), headerStr, '\n')) {
+            delete in;
+            return;
+        }
 	}
 
 	string line;
@@ -57,15 +62,27 @@ void extractRowsMultiMat(options* opts) {
 	if (!idxS) {
 		cerr << "Can't open index file " << arg4 << endl; std::exit(99);
 	}
-	char sepRef = '\t'; int cnt = 0; 
+    char sepRef = '\t';
+    size_t guideLine(1);
 	//read in guide file
 	while (getline(idxS, line, '\n')) {
+        if (line.empty()) {
+            guideLine++;
+            continue;
+        }
 		size_t pos = line.find(sepRef);
 		if (pos == std::string::npos) {
-			std::cout << "requires \"" << sepRef << "\" in index file: line " << cnt << "\n" << line << "\n";
-			exit(957);
+            std::cout << "requires \"" << sepRef << "\" in index file: line " << guideLine << "\n" << line << "\n";
+            for (size_t i = 0; i < outS.size(); i++) { delete outS[i]; }
+            idxS.close();
+            delete in;
+            return;
 		}
 		string Bin = line.substr(0, pos);
+        if (Bin.empty()) {
+            guideLine++;
+            continue;
+        }
 		Bin = ReplaceAll(Bin, ":", "_");
 		size_t pos2 = line.find(sepRef,pos+1);
 		string gene;
@@ -75,6 +92,10 @@ void extractRowsMultiMat(options* opts) {
 		else {
 			gene = line.substr(pos + 1, pos2 - pos - 1);
 		}
+        if (gene.empty()) {
+            guideLine++;
+            continue;
+        }
 		auto idx = srchH.find(gene);
 		if (idx == srchH.end()) {
 			srchH[gene] = vector<string>(1,Bin);
@@ -93,7 +114,7 @@ void extractRowsMultiMat(options* opts) {
 		}
 		auto idx2 = binH.find(Bin);
 		if (idx2 == binH.end()) {
-			int idx = outS.size();
+            int idx = static_cast<int>(outS.size());
 			binH[Bin] = idx;
 			string outF = outD + Bin + ".mat";
 			outS.push_back(new ofbufstream(outF, ios::out));
@@ -101,13 +122,19 @@ void extractRowsMultiMat(options* opts) {
 				(*outS[idx]) << headerStr +"\n";
 			}
 		}	
-		cnt++;
+        guideLine++;
 	}
 	idxS.close();
 	std::cout << "Found " << outS.size() << " categories, creating " << outS.size() << " submatrices in " << outD << endl;
 	int geneCntFnd(0);
 	//guide file finished, now separate big matrix on the fly by guide index
-	int num_threads = opts->threads;
+    if (srchH.empty() || outS.empty()) {
+        for (size_t i = 0; i < outS.size(); i++) {
+            delete outS[i];
+        }
+        delete in;
+        return;
+    }
 	/*
 	vector < job4 > slots(num_threads);
 	int j(0), cntNA(0);
@@ -146,18 +173,26 @@ void extractRowsMultiMat(options* opts) {
 	
 	*/
 	
-	while (getline((*in), line, '\n')) {
+    size_t matrixLine = opts->header ? 2 : 1;
+    while (getline((*in), line, '\n')) {
 		
 		
 		
 		size_t pos = line.find(sep);
 		if (pos == std::string::npos) {
-			std::cout << "requires \"" << sep << "\" in matrix file: line " << cnt << "\n" << line << "\n";
-			exit(958);
+            std::cout << "requires \"" << sep << "\" in matrix file: line " << matrixLine << "\n" << line << "\n";
+            for (size_t i = 0; i < outS.size(); i++) {
+                delete outS[i];
+            }
+            delete in;
+            return;
 		}
 		string gene = line.substr(0, pos);
 		auto gid = srchH.find(gene);
-		if (gid == srchH.end()) { continue; }
+        if (gid == srchH.end()) {
+            matrixLine++;
+            continue;
+        }
 		//sure hit after this point, something has to be written out
 		geneCntFnd++;
 		for (size_t j = 0; j < gid->second.size(); j++) {
@@ -165,105 +200,154 @@ void extractRowsMultiMat(options* opts) {
 			auto bid = binH.find(gid->second[j]);
 			if (bid == binH.end()) {
 				cerr << "Error: could not find bin again:" << gid->second[j] << "(" << j << "), " << gene << endl;
-				exit(666);
+                for (size_t i = 0; i < outS.size(); i++) {
+                    delete outS[i];
+                }
+                delete in;
+                return;
 			}
+            if (bid->second < 0 || static_cast<size_t>(bid->second) >= outS.size()) {
+                cerr << "Error: bin index out of range for " << gid->second[j] << endl;
+                for (size_t i = 0; i < outS.size(); i++) {
+                    delete outS[i];
+                }
+                delete in;
+                return;
+            }
 			(*outS[bid->second]) << line + "\n";
 		}
+        matrixLine++;
 
 	}
 
 	std::cout << "Done extracting " << geneCntFnd << " genes\n";
 	//clean up
-	for (uint i = 0; i < outS.size(); i++) {
+    for (size_t i = 0; i < outS.size(); i++) {
 		delete outS[i];
 	}
     delete in;
 
 }
 void extractRows(options* opts){
-	
-	string inF = opts->input;
-	string outF = opts->output;
-	string arg4 = opts->referenceFile;
-	const char sep = opts->sepChar;
-	bool check4idxMatch = opts->check4idxMatch;
 
-	istream* in;
-	if (isGZfile(inF)) {
+    string inF = opts->input;
+    string outF = opts->output;
+    string refFile = opts->referenceFile;
+    const char sep = opts->sepChar;
+    bool check4idxMatch = opts->check4idxMatch;
+
+    istream* in;
+    if (isGZfile(inF)) {
 #ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in);
-		std::cout << "Reading gzip input\n";
+        in = new igzstream(inF.c_str(), ios::in);
+        std::cout << "Reading gzip input\n";
 #else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
+        std::cout << "gzip not supported in your rtk build\n"; exit(50);
 #endif
 
-	}	else {
-		in = new ifstream(inF.c_str());
-	}
+    }	else {
+        in = new ifstream(inF.c_str());
+    }
     if (!(*in)){
 #ifdef notRpackage
         cerr << "Can't open infile " << inF << endl; std::exit(99);
 #endif
+        delete in;
+        return;
     }
-	ofstream out(outF.c_str(), ios::out);
-	if (!out){
+    ofstream out(outF.c_str(), ios::out);
+    if (!out){
 #ifdef notRpackage
         cerr << "Can't open outfile " << outF << endl; std::exit(99);
 #endif
+        delete in;
+        return;
     }
     //read file that contains nicely ordered all indexes of lines to be extracted
     string line;
-    vector<uint> srtTar;
-    ifstream idxS(arg4.c_str());
+    vector<size_t> srtTar;
+    ifstream idxS(refFile.c_str());
     if (!idxS){
 #ifdef notRpackage
-        cerr << "Can't open outfile " << arg4 << endl; std::exit(99);
+        cerr << "Can't open outfile " << refFile << endl; std::exit(99);
 #endif
+        delete in;
+        out.close();
+        return;
     }
-	//char sepRef = '\t'; int cnt = 0; 
+    //char sepRef = '\t'; int cnt = 0; 
     while (getline(idxS, line, '\n')) {
+        if (line.empty()){
+            continue;
+        }
         if (line[0] == '>'){
             line.erase(0,1);
         }
-        srtTar.push_back(stoi(line));
+        if (line.empty()){
+            continue;
+        }
+        try {
+            srtTar.push_back((size_t)stoull(line));
+        }
+        catch (const std::exception&) {
+            cerr << "Invalid reference index: " << line << "\n";
+            idxS.close();
+            delete in;
+            out.close();
+            return;
+        }
     }
     idxS.close();
     //sort ascending
     sort(srtTar.begin(), srtTar.end());
 
-    //sort through new file
-    if (!out){
-#ifdef notRpackage
-        cerr << "Can't open outfile " << outF << endl; std::exit(99);
-#endif
+    if (srtTar.empty()) {
+        cerr << "No valid target indexes found in reference file\n";
+        delete in;
+        out.close();
+        return;
     }
+
+    //sort through new file
     cerr << "Searching for "<< srtTar.size()<<" targets in matrix\n";
-    uint cnt(1); uint j(0);
+    size_t cnt(1); size_t j(0); size_t extractedCnt(0);
     while (getline((*in), line, '\n')) {
-        if (cnt == srtTar[j]){
-			if (check4idxMatch) {
-				size_t pos = line.find(sep);
-				if (pos == std::string::npos) {
-					std::cout << "requires \""<< sep<<"\" separated row name: line " << cnt << "\n"<<line<<"\n";
-					exit(956);
-				}
-				string rowN = line.substr(0,pos);
-				if (stoi(rowN) != (int)cnt) {
-					cerr << "mismatch "<<rowN<<" != "<<cnt<<"\n Consider using non sorted matrix mode\n";
-					exit(955);
-				}
-			}
+        if (j < srtTar.size() && cnt == srtTar[j]){
+            if (check4idxMatch && cnt!=1) { 
+                //don't check in line 1, as this is the header..
+                size_t pos = line.find(sep);
+                if (pos == std::string::npos) {
+                    std::cout << "requires \""<< sep<<"\" separated row name: line " << cnt << "\n"<<line<<"\n";
+                    exit(956);
+                }
+                string rowN = line.substr(0,pos);
+                size_t parsedRow;
+                try {
+                    parsedRow = (size_t)stoull(rowN);
+                }
+                catch (const std::exception&) {
+                    cerr << "Invalid row name index at line " << cnt << ": " << rowN << "\n";
+                    delete in;
+                    out.close();
+                    return;
+                }
+                if (parsedRow != cnt) {
+                    cerr << "mismatch "<<rowN<<" != "<<cnt<<"\n Consider using non sorted matrix mode\n";
+                    exit(955);
+                }
+            }
             out << line + "\n";
-            uint cur = srtTar[j];
-            while (srtTar[j] == cur){ j++; }
+            extractedCnt++;
+            size_t cur = srtTar[j];
+            while (j < srtTar.size() && srtTar[j] == cur){ j++; }
             if (j == srtTar.size()){ break; }
         }
         cnt++;
     }
 
     //(*in).close(); 
-	delete in;
-	out.close();
+    delete in;
+    out.close();
     if (j != srtTar.size()){
 
 #ifdef notRpackage
@@ -271,7 +355,7 @@ void extractRows(options* opts){
 #endif
     }
 
-	cerr << "Done extracting " << cnt << " lines\n";
+    cerr << "Done extracting " << extractedCnt << " lines\n";
 }
 //****************************  smplVec::smplVec ***********
 smplVec::smplVec(const vector<mat_fl>& vec, const int nt) :IDs(0),totSum(0),
@@ -532,7 +616,7 @@ double smplVec::calc_eveness(const vector<uint>& vec){
 
 // map versions of diversity fuctions:
 long smplVec::getRichness(rare_map& cnts){
-    richness = cnts.size(); // set richness for other functions here
+    richness = static_cast<long>(cnts.size()); // set richness for other functions here
     return richness;
 }
 
@@ -1313,7 +1397,10 @@ vector<string> getMMSeqsClus(FILE* incl, string &lastline,bool& cont) {
 	string curClus("");
 	string curLine("");
 	if (lastline.length() == 0) {
-	    bool wrk = fgets(buf, sizeof buf, incl);
+        if (fgets(buf, sizeof buf, incl) == NULL) {
+            cont = false;
+            return ret;
+        }
 		buf[strcspn(buf, "\n")] = 0;
 		lastline = string(buf);
 		return ret;
@@ -1387,7 +1474,11 @@ textBlock* getClusBlock(FILE* incl, string& lastline) {// ,  FILE* incl,
     }
     else {
         //getline(incl, line);
-        bool wrk = fgets(buf, bufS, incl);		buf[strcspn(buf, "\n")] = 0;
+        if (fgets(buf, bufS, incl) == NULL) {
+            ret->cont = false;
+            return ret;
+        }
+        buf[strcspn(buf, "\n")] = 0;
 
         ret->txt.push_back(string(buf));
     }
