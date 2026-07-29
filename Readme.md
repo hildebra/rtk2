@@ -1,11 +1,15 @@
 # rtk2
 
+
+[![Action CI](https://github.com/hildebra/rtk2/actions/workflows/test.yml/badge.svg)](https://github.com/hildebra/rtk2/actions/workflows/test.yml)  
+[![](https://cranlogs.r-pkg.org/badges/rtk)](https://cran.r-project.org/package=rtk)
+[![](https://cranlogs.r-pkg.org/badges/grand-total/rtk)](https://cranlogs.r-pkg.org/badges/grand-total/rtk)
+
+
 `rtk2` is a C++ command-line toolkit for building, transforming, summarizing,
 normalizing, and rarefying large gene-abundance matrices. It also contains
 specialized modes for functional aggregation, gene-cluster decluttering, and
 abundance-aware discovery of mosaic gene clusters.
-
-The current source reports version 2.28.
 
 ## Build
 
