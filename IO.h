@@ -1,6 +1,13 @@
 #pragma once
 
 #include "options.h"
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <queue>
+#include <thread>
+#include <type_traits>
 
 
 //#include <tchar.h>
@@ -17,6 +24,104 @@ const bool verbose=0;
 #define OFBUFFER  800000;
 
 std::string ReplaceAll(std::string& str, const std::string& from, const std::string& to);
+
+std::ostream* openOutputStream(const std::string& filePath);
+void closeOutputStream(std::ostream* stream);
+std::istream* openInputStream(const std::string& filePath);
+void closeInputStream(std::istream* stream);
+bool forEachInputLine(const std::string& filePath,
+	const std::function<bool(const std::string&)>& onLine,
+	std::size_t gzipThreadCount = 0);
+void startProgramTimer();
+double getProgramElapsedSeconds();
+void printProgramTimerStep(const std::string& stepName);
+
+class ThreadPool;
+
+class CentralOutputWriter {
+public:
+	explicit CentralOutputWriter(const std::string& filePath,
+		std::size_t gzipThreadCount = 0);
+	~CentralOutputWriter();
+	void write(const std::string& chunk);
+	void flush();
+	void close();
+
+private:
+	struct GzipTask {
+		std::future<std::vector<char>> compressed;
+		std::size_t rawBytes;
+		GzipTask(std::future<std::vector<char>>&& fut, std::size_t bytes)
+			: compressed(std::move(fut)), rawBytes(bytes) {}
+	};
+	struct GzipIndexEntry {
+		std::uint64_t offset;
+		std::uint64_t compressedBytes;
+		std::uint64_t rawBytes;
+		GzipIndexEntry(std::uint64_t o, std::uint64_t c, std::uint64_t r)
+			: offset(o), compressedBytes(c), rawBytes(r) {}
+	};
+
+	void workerLoop();
+	void writeDirect(const std::string& chunk);
+	void writeGzipSidecar();
+	void enqueueGzipChunk(std::unique_lock<std::mutex>& lock, std::string&& chunk);
+	void enqueueBufferedGzipData(std::unique_lock<std::mutex>& lock, bool flushPartial);
+
+	std::string targetFile;
+	std::ostream* out;
+	bool asyncMode;
+	bool parallelGzipMode;
+	bool closed;
+	bool stopWorker;
+	std::size_t pendingBytes;
+	std::size_t maxPendingBytes;
+	std::unique_ptr<ThreadPool> gzipCompressionPool;
+	std::uint64_t gzipOutputOffset;
+	std::thread worker;
+	std::mutex queueMutex;
+	std::condition_variable queueCv;
+	std::condition_variable drainCv;
+	std::deque<std::string> queue;
+	std::deque<GzipTask> gzipTasks;
+	std::string gzipInputBuffer;
+	std::vector<GzipIndexEntry> gzipMemberIndex;
+};
+
+class ThreadPool {
+public:
+	explicit ThreadPool(size_t threadCount);
+	~ThreadPool();
+	ThreadPool(const ThreadPool&) = delete;
+	ThreadPool& operator=(const ThreadPool&) = delete;
+
+	template <class F, class... Args>
+	auto enqueue(F&& f, Args&&... args)
+		-> std::future<typename std::result_of<F(Args...)>::type> {
+		using return_type = typename std::result_of<F(Args...)>::type;
+		auto task = std::make_shared<std::packaged_task<return_type()>>(
+			std::bind(std::forward<F>(f), std::forward<Args>(args)...)
+		);
+		std::future<return_type> result = task->get_future();
+		{
+			std::lock_guard<std::mutex> lock(taskMutex);
+			if (stopping) {
+				throw std::runtime_error("enqueue on stopped ThreadPool");
+			}
+			tasks.emplace([task]() { (*task)(); });
+		}
+		taskCv.notify_one();
+		return result;
+	}
+
+private:
+	void workerLoop();
+	std::vector<std::thread> workers;
+	std::queue<std::function<void()>> tasks;
+	std::mutex taskMutex;
+	std::condition_variable taskCv;
+	bool stopping;
+};
 
 class ofbufstream {
 public:
@@ -38,6 +143,14 @@ public:
 	}
 	void operator<< (const string& X) {
 		size_t lX(X.length());
+		if (lX > bufS) {
+			writeStream();
+			ofstream of(file.c_str(), ios::app | ios::binary);
+			if (!of) { cerr << "Could not append to output file \"" << file << "\"\n"; exit(763); }
+			of.write(X.data(), static_cast<std::streamsize>(lX));
+			if (!of) { cerr << "Could not write to output file \"" << file << "\"\n"; exit(763); }
+			return;
+		}
 		if (lX + used > bufS) {
 			writeStream();
 		}
@@ -47,8 +160,9 @@ public:
 private:
 	void writeStream() {
 		if (used == 0) { return; }
-		ofstream of(file.c_str(), ios::app);
+		ofstream of(file.c_str(), ios::app | ios::binary);
 		of.write(keeper, used);
+		if (!of) { cerr << "Could not write to output file \"" << file << "\"\n"; exit(763); }
 		of.close();
 		used = 0;
 	}
@@ -119,7 +233,7 @@ auto getline_n(std::basic_istream<CharT, Traits>& in, std::basic_string<CharT, T
 
 
 
-template<typename T> T getMedian(vector<T>& in){
+template<typename T> T getMedian(vector<T> in){
 	sort(in.begin(), in.end());
 	size_t size = in.size();
 	if (size == 0){ return (T)0; }
@@ -155,7 +269,7 @@ public:
 	~DivEsts(){}
 	//void print2file(const string);
 	//data vectors
-	vector<vector<long>> richness;
+	vector<vector<int64_t>> richness;
 	vector<vector<double>> shannon,simpson,invsimpson,chao1,eve;
 	string SampleName;
 	int depth;
@@ -173,9 +287,9 @@ public:
 		//delete[] arr;
 	}
 	void rarefy(vector<double> ,string o,int rep,DivEsts*, vector<vector<rare_map>>& RareSample,
-		vector<string>& retCntsSampleName, string& skippedSample, vector<vector<vector<uint>>>* ,vector<vector<vector<uint>>>* , int=0,bool=false, bool=false);
-	long getRichness(rare_map& cnts);
-	long getRichness(const vector<unsigned int>&);
+		vector<string>& retCntsSampleName, string& skippedSample, global_count_cube*, global_count_cube*, int=0,bool=false, bool=false);
+	int64_t getRichness(rare_map& cnts);
+	int64_t getRichness(const vector<unsigned int>&);
 	//int maxSiz(){return vector<unsigned short>::max_size();}
 	vector < string > getRowNames(){ return(IDs); }
 
@@ -197,20 +311,20 @@ private:
 	//unsigned short * arr;
 	vector<string> IDs;
 	vector<unsigned int> arr;
-	double totSum;
+	rtk_count totSum;
 	vector<MyRNG> rng_P;
 	MyRNG rng;
 	int num_threads;
-	long richness;
+	int64_t richness;
 	double Shannon;
-	int numFeatures;
+	size_t numFeatures;
 
 	//vector<float> vec;
 };
 
-void computeChao2(std::vector<vector<mat_fl>>& chao2, vector<vector<vector<uint>>>& abundInRow);
+void computeChao2(std::vector<vector<mat_fl>>& chao2, const global_count_cube& abundInRow, rtk_count sampleCount);
 // compute ace or ice, depending on input data
-void computeCE(vector<vector<mat_fl>>& CE, vector<vector<vector<uint>>>& abundInRow);
+void computeCE(vector<vector<mat_fl>>& CE, const global_count_cube& abundInRow, bool incidence, rtk_count sampleCount);
 
 
 void writeGlobalDiv(options* opts, vector<vector<mat_fl>>& ICE, vector<vector<mat_fl>>& ACE, vector<vector<mat_fl>>& chao2, string outF);
@@ -223,9 +337,9 @@ class GeneAbundance
 {
 public:
 	GeneAbundance(const string, const string, bool);
-	smat_fl getAbundance(const string);
+	mat_fl getAbundance(const string);
 	bool isEmpty() { return isEmp; }
-	long getTotalCnts() { mat_fl total(0); for (auto ix : GeneAbu) { total += ix.second; }  return (long)total; }
+	mat_fl getTotalCnts() { mat_fl total(0); for (const auto& ix : GeneAbu) { total += ix.second; } return total; }
 private:
 	bool isPsAss; // is PsAssembly
 	bool isSuppl;
@@ -246,4 +360,3 @@ vector<string> getGenesInClstr(vector<string>& clbl,vector<string>&,vector<float
 textBlock* getClusBlock(istream&, string& lastline);
 textBlock* getClusBlock(FILE*, string& lastline);
 vector<string> getMMSeqsClus(FILE*, string &lastline,bool&);
-

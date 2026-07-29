@@ -41,7 +41,7 @@ class HMat
 public:
 	HMat(string L, vector<string> Samples, vector<string> Features);
 	~HMat(){}
-	void setDelims(options* opts) { funcAnnoAND = opts->funcAnnoAND; funcAnnoOR = opts->funcAnnoOR; }
+	void setDelims(options* opts) { funcAnnoAND = opts->funcAnnoAND; funcAnnoOR = opts->funcAnnoOR; trackMedian = opts->median; }
 	//get
 	//unsigned long operator [](int i) const    { return registers[i]; }
 	//add single matrix entry (v) to at position j to hierachy level kk
@@ -49,10 +49,10 @@ public:
 	void set(string& kk, vector<mat_fl>& v);
 	void prep();
 	vector<string>& getFeatures() { return FeatureNs; }
-	vector<mat_fl> getRow(uint x, bool mean=false);
+	vector<mat_fl> getRow(uint x, bool mean=false, bool useMedian=false);
 
-	void print(ofstream&,bool,int, int);
-	void filter(bool mean,int occMin, int occPerSmpl);
+	void print(ofstream&,bool,bool,int, int);
+	void filter(bool mean,bool useMedian,int occMin, int occPerSmpl);
 
 private:
 	void rmRow(vector<bool>& rms);
@@ -63,11 +63,13 @@ private:
 	vector< mat_fl > empty;
 	vector< vector< mat_fl > > mat;
 	vector<vector<uint>> catCnt;
+	vector<unordered_map<uint, vector<mat_fl>>> catValues;
 	vector<uint> maxCatCnt;
 	uint hiTaNAcnt;
 	string funcAnnoAND; // = ","  #in sumMat, denotes annotations that should be merged (summed across genes)
 	string funcAnnoOR; // = "|"  #in sumMat, denotes annotations that are equal but undecided (averaged across genes)
 	bool filterDone;
+	bool trackMedian;
 };
 
 class HigherMats {
@@ -111,9 +113,6 @@ public:
 	VecFiles(const string inF, const string outF, const string xtra);
 	~VecFiles(){}
 private:
-	void readVecFile(const string inF);
-	int getIdx(const string&);
-
 	//VARIABLES
 	vector<string> infiles;
 };
@@ -182,6 +181,7 @@ struct job3 {
 struct job4 {
 	std::future <string> fut;
 	bool inUse = false;
+	int rowIndex = -1;
 };
 
 class Matrix
@@ -204,14 +204,15 @@ public:
 	void addTtlSmpl(vector<mat_fl> x, int idx) { mat[idx] = x; }
 	void splitOnHDD(string out_seed);
 	void writeSums(string);
-	void normalize();
+	void normalize(int threads = 1);
 	void transpose();
 	//requires clStr object from
 	declutRes* declutCalc(vector<string>* txt, options* opts);
 	declutRes* declutCalc2(vector<string>* txt, options* opts);
 	void decluter(options*);//CD-HIT version
 	void decluter2(options*);//mmseqs2 version
-	void writeMatrix(const string ofile,bool onlyFilled=false,int threads=1);
+	void writeMatrix(const string ofile, bool onlyFilled = false, int threads = 1,
+		const string& rowHeader = "Gene");
 	size_t smplNum(){ return colIDs.size(); }
 	int rowNum(){ return static_cast<int>(rowIDs.size()); }
 
@@ -223,7 +224,6 @@ public:
 		if (mat.size() >= 1) { return (int)mat[0].size(); }
 		else { return 0; }
 	}
-	void estimateModuleAbund(char ** args, int argc);
 	void estimateModuleAbund(options*);
 	void resizeMatRows(uint x,mat_fl def=(mat_fl)0);
 	//for the R module, all used for rarefactions only
@@ -277,6 +277,7 @@ protected:
 	//vector<HMat*> HI;
 	HigherMats* HI;
 	LvlUp LUp; //contains hierachy info (gene -> tax levels/function levels..
+	unordered_set<string> excludedHierarchyIDs;
 	int maxLvl;
 	vector<string> LvlNms;
 	string sampleNameSep;

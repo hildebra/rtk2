@@ -8,13 +8,8 @@ double FET::ulogHypergeometricProb(int a, int b, int c, int d) {
 
 void FET::uinitLogFacs(uint n) {
 	uint curLFs = static_cast<uint>(logFacs.size());
-	if ((n + 1) > curLFs) {
-		lock_guard<mutex> guard(protect);
-		logFacs.resize(n + 1);
-	}
-	else {
-		return;
-	}
+	if ((n + 1) <= curLFs) { return; }
+	logFacs.resize(n + 1);
 	for (uint i = curLFs; i < (n + 1); ++i) {
 		if (i == 0) {
 			logFacs[0] = 0;
@@ -50,8 +45,17 @@ float FET::ultrafastfet(int a, int b, int c, int d) {
 
 	float pval(0);
 
-	int m = a + b + c + d;
+	if (a < 0 || b < 0 || c < 0 || d < 0) {
+		throw invalid_argument("Fisher exact test received a negative table cell");
+	}
+	long long total = static_cast<long long>(a) + b + c + d;
+	if (total > numeric_limits<int>::max()) {
+		throw overflow_error("Fisher exact test table is too large");
+	}
+	int m = static_cast<int>(total);
 
+	// Keep readers protected as well as vector growth: resize invalidates storage used by ufet.
+	lock_guard<mutex> guard(protect);
 	uinitLogFacs((uint) m);
 
 	pval = (float)ufet(a, b, c, d, m);

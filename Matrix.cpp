@@ -101,12 +101,48 @@ void vecPurge(vector<vector<mat_fl>>& vec, mat_fl val) {
 	}
 }
 string join(const vector<string>& in, const string &X) {
+	if (in.empty()) { return ""; }
 	string ret(in[0]); for (size_t i = 1; i < in.size(); i++) { ret += X + in[i]; } return ret;
 }
 string join(const vector<int>& in, const string &X) {
+	if (in.empty()) { return ""; }
 	string ret(itos(in[0])); for (size_t i = 1; i < in.size(); i++) { ret += X + itos(in[i]); } return ret;
 }
 bool writeChunk(ostream* o, string  s) { (*o) << s; return true; }
+
+static mat_fl parseMatrixNumber(const string& text, const string& rowID, int column) {
+	if (text.empty()) { cerr2("Empty numeric field in row " + rowID + ", column " + itos(column + 1) + "\n", 64); }
+	errno = 0;
+	char* end = nullptr;
+	const double value = strtod(text.c_str(), &end);
+	while (end != nullptr && *end != '\0' && isspace(static_cast<unsigned char>(*end))) { end++; }
+	if (end == text.c_str() || end == nullptr || *end != '\0' || errno == ERANGE || !isfinite(value) || value < 0) {
+		cerr2("Invalid numeric value '" + text + "' in row " + rowID + ", column " + itos(column + 1) + "\n", 64);
+	}
+	return static_cast<mat_fl>(value);
+}
+
+static vector<string> splitByToken(const string& value, const string& delimiter) {
+	vector<string> parts;
+	if (delimiter.empty()) { parts.push_back(value); return parts; }
+	size_t start = 0;
+	while (true) {
+		const size_t pos = value.find(delimiter, start);
+		if (pos == string::npos) { parts.push_back(value.substr(start)); break; }
+		parts.push_back(value.substr(start, pos - start));
+		start = pos + delimiter.size();
+	}
+	return parts;
+}
+
+static bool isGeneIdHierarchyHeader(const string& value) {
+	string normalized;
+	for (char ch : value) {
+		const unsigned char uch = static_cast<unsigned char>(ch);
+		if (isalnum(uch)) { normalized += static_cast<char>(tolower(uch)); }
+	}
+	return normalized == "geneid";
+}
 
 
 
@@ -122,6 +158,7 @@ ModStep::ModStep(const string & s, bool & recMod, vector<string>& subMod) :alter
 		stringstream buff(token);
 		vector<string> tmp(0);
 		while (std::getline(buff, tok2, ',')) {
+			if (tok2.empty()) { continue; }
 			tmp.push_back(tok2);
 			if (tok2[0] == 'M') {
 				recMod = true;
@@ -162,36 +199,33 @@ void ModStep::abundParts(const vector<mat_fl>& v, const unordered_map<string, in
 	KOdescr.resize(alternates.size(), "");
 	//actual deep routine to determine if KOs in this step satisfy presence conditions
 	for (size_t i = 0; i < alternates.size(); i++) {
-		size_t altS = alternates[i].size(); float hits(0);
-		vector<mat_fl> tmpAB(altS, (mat_fl)0);
-		for (size_t j = 0; j < altS; j++) {
+		float hits(0);
+		vector<mat_fl> tmpAB;
+		for (size_t j = 0; j < alternates[i].size(); j++) {
 			//redundant???
 			if (redundancy[i][j] > redund) {
-				altS--; //reduce size of this set
-
 				continue;
 			}
+			tmpAB.push_back(0);
 			//check for actual abundance in matrix-vector subpart
 			auto fn = IDX.find(alternates[i][j]);
-			if (fn == IDX.end()) {
-				tmpAB[j] = 0;
-			}
-			else {
-				tmpAB[j] = v[fn->second];
-				if (tmpAB[j] > 0) {
+			if (fn != IDX.end()) {
+				if (fn->second < 0 || static_cast<size_t>(fn->second) >= v.size()) { cerr2("Module feature index out of range for " + alternates[i][j] + "\n", 487); }
+				tmpAB.back() = v[fn->second];
+				if (tmpAB.back() > 0) {
 					hits++;
 					KOdescr[i] += alternates[i][j] + ",";
 				}
 			}
 		}
-		if (altS == 0) {
+		if (tmpAB.empty()) {
 			//r[i] = (mat_fl)-1;//signal that removed due to redundancy
 			continue;
 		}
 		/*		if (hits > 0) {
 		int x = 0;
 		}*/
-		if (hits / (float)altS >= hitComplRatio) {
+		if (hits / static_cast<float>(tmpAB.size()) >= hitComplRatio) {
 			abund[i] = median(tmpAB);
 			active[i] = true;
 		}
@@ -223,6 +257,7 @@ mat_fl Module::pathAbundance(const vector<mat_fl>& v, const unordered_map<string
 	//float enzymCompl(0.8f); 
 	//int redund(0);
 
+	if (steps.empty()) { savedNmsKO = ""; modScoreOut = 0.f; return 0; }
 	vector< vector< mat_fl >> abunds(steps.size(), vector<mat_fl>(0));//contains abundance
 	vector< vector< bool >> active(steps.size());//contains info if path was even active
 	vector<mat_fl> preMed(steps.size(), (mat_fl)0), postMed(steps.size(), (mat_fl)0);
@@ -257,6 +292,7 @@ mat_fl Module::pathAbundance(const vector<mat_fl>& v, const unordered_map<string
 		vector<int> decIdx(steps.size(), 0);
 		//ini decIdx
 		for (size_t i = 0; i < steps.size(); i++) {
+			if (active[i].empty()) { continue; }
 			size_t dI = 0; double maxAB = 0;
 			while (dI < active[i].size()) {
 				if (abunds[i][dI] > maxAB && active[i][dI]) {
@@ -270,6 +306,7 @@ mat_fl Module::pathAbundance(const vector<mat_fl>& v, const unordered_map<string
 
 		while (1) { // this loop goes over every possible path combination
 			for (size_t i = 0; i < steps.size(); i++) {
+				if (active[i].empty()) { continue; }
 				if (abunds[i][decIdx[i]] > 0 && active[i][decIdx[i]]) {
 					curP[i] = abunds[i][decIdx[i]]; act++;
 					if (saveKOnames) {
@@ -315,6 +352,7 @@ Modules::Modules(const string& inF, vector<string> cns) :
 	string line(""); vector<string> buffer(0);
 	string ModToken = "M";
 	while (safeGetline(is, line)) {
+		if (line.empty()) { continue; }
 		//comment
 		if (line[0] == '#' || line.substr(0,7)=="Mod Des") { continue; }
 		//new module opens, create old module
@@ -332,7 +370,8 @@ Modules::Modules(const string& inF, vector<string> cns) :
 		}
 	}
 	//create last module
-	mods.push_back(Module(buffer));
+	if (!buffer.empty()) { mods.push_back(Module(buffer)); }
+	if (mods.empty()) { cerr2("Module database contains no valid modules: " + inF + "\n", 13); }
 
 	buffer.resize(0);
 	is.close();
@@ -500,6 +539,10 @@ void Modules::calc_redund() {
 void Modules::writeMatrix(const string of, bool onlyFilled, bool collapseDblFeats) {
 	ofstream out;
 	out.open(of.c_str(), ios_base::out);
+	if (!out) {
+		cerr << "Modules::writeMatrix: failed to open output file: " << of << "\n";
+		return;
+	}
 	out.precision(8); out << "Gene";
 	for (size_t smpl = 0; smpl < (colIDs.size()); smpl++) {
 		out << "\t" << colIDs[smpl];
@@ -566,7 +609,7 @@ vector<string> Modules::modNms_numbered() {
 }
 
 void Modules::writeModDescr(const string& nos, bool onlyUsed) {
-	if (onlyUsed && ModUsed.size() == 0) { return; }
+	if (onlyUsed && ModUsed.size() != rowIDs.size()) { return; }
 	ofstream of(nos.c_str());
 	bool useHie = false;
 	if (hierachy.size() == moduleDescriptions.size()) { useHie = true; }
@@ -617,6 +660,10 @@ void Modules::calcModAbund( vector<mat_fl>& v, const int pos, const unordered_ma
 	//estimate modules that contain other modules
 	for (size_t j = 0; j < recurrentMods.size(); j++) {
 		uint i = recurrentMods[j];
+		if (i >= mods.size()) {
+			cerr << "calcModAbund: recurrentMods index " << i << " out of range (" << mods.size() << "), skipping.\n";
+			continue;
+		}
 		ret[i] = mods[i].pathAbundance(v, IDX, redund, PathwCompl, enzymCompl, retStr[i], retScore[i]);
 	}
 
@@ -638,7 +685,7 @@ Matrix::Matrix(void)
 
 void Matrix::readColNms(istream* in,const char sep) {
 	string segments; string line;
-	safeGetline((*in), line);
+	if (!safeGetline((*in), line)) { cerr2("Matrix contains no header.\n", 5); }
 	//getline(in, line, '\n');
 	while (line.substr(0, 1) == "#") {
 		safeGetline((*in), line);
@@ -648,12 +695,13 @@ void Matrix::readColNms(istream* in,const char sep) {
 	sso << line;
 	while (getline(sso, segments, sep)) {
 		cnt2++;
-		if (segments.length() > 150) {
-			cerr2 (segments +" error!\n",5);
-		}
 		if (cnt2 == -1) { continue; }
+		if (segments.empty()) { cerr2("Matrix contains an empty sample ID.\n", 5); }
+		if (colID_hash.find(segments) != colID_hash.end()) { cerr2("Duplicate sample ID in matrix header: " + segments + "\n", 5); }
 		colIDs[cnt2] = segments;
+		colID_hash[segments] = cnt2;
 	}
+	if (cnt2 + 2 != static_cast<int>(colIDs.size()) + 1) { cerr2("Matrix header column count changed while reading.\n", 5); }
 }
 
 int Matrix::iniCols(istream* in, const char sep) {
@@ -702,46 +750,19 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 	//and writes it simultaneously to single files
 	colSum = colsums;
 
-	
-	istream* in;
-	if (isGZfile(inF)) {
-#ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in); std::cout << "Straming gzip input on the fly\n";
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-	}
-	else { in = new ifstream(inF.c_str()); }
-
+	istream* in = openInputStream(inF);
 	if (!(*in)) {cerr2 ("Cant open file " +inF +"\n", 11);}
 
-
-	ostream * out;
-	if (isGZfile(outF)) {
-#ifdef _gzipread
-		out = new ogzstream(outF.c_str(), ios::out);
-		std::cout << "Writing gzip'd matrix " << outF << endl;
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-	}
-	else { out = new ofstream(outF); }
-	//(*out).precision(9);
-
-
-	if (!(*out)) {cerr2 ("Can't open out file " +outF +"\n", 11);}
+	CentralOutputWriter writer(outF, static_cast<size_t>(std::max(1u, opts->threads)));
 	int ini_ColPerRow = iniCols(in,sep);
 	//reset istream..
-	delete in;
-	if (isGZfile(inF)) {
-#ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in); 
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-	}
-	else { in = new ifstream(inF.c_str()); }
+	closeInputStream(in);
+	in = openInputStream(inF);
 	readColNms(in,sep);
+	if (colNms.size() != colIDs.size() || colsums.size() != colIDs.size()) {
+		closeInputStream(in);
+		cerr2("Normalization column names/sums do not match the input header.\n", 339);
+	}
 
 	//check that colNames and colSums are in same order..
 	for (uint i = 0; i < colIDs.size(); i++) {
@@ -757,62 +778,67 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 
 
 	//create header of normalized matrix..
-	*out << "Norm_rtk";
+	std::string header = "Norm_rtk";
 	for (uint i = 0; i < colIDs.size(); i++) {
-		*out << SEP << colIDs[i];
+		header += SEP;
+		header += colIDs[i];
 	}
-	*out << endl;
+	header += "\n";
+	writer.write(header);
 
 	//heavy reading
 
 
-	int num_threads = opts->threads;
-	vector < job4 > slots(num_threads);
-	int j(0), cntNA(0);
-	string line("");// = safeGetline2(in);
-	//thread for ostream
-	future<bool> wrStr; string wrTmp("");
-	wrStr = async(std::launch::async, writeChunk, out, wrTmp);
+	const int num_threads = std::max(1, static_cast<int>(opts->threads));
+	const int effective_threads = (opts->threads <= 1)
+		? static_cast<int>(std::max(1u, std::thread::hardware_concurrency()))
+		: num_threads;
+	ThreadPool pool(static_cast<size_t>(effective_threads));
+	size_t batchTarget = static_cast<size_t>(num_threads);
+	if (effective_threads != num_threads) {
+		batchTarget = static_cast<size_t>(effective_threads);
+	}
+	if (colIDs.size() <= 128) {
+		batchTarget *= 16;
+	}
+	else if (colIDs.size() <= 1024) {
+		batchTarget *= 8;
+	}
+	else {
+		batchTarget *= 2;
+	}
+	batchTarget = std::max(static_cast<size_t>(effective_threads), std::min(batchTarget, static_cast<size_t>(512)));
+	std::cout << "[normalize] parallel row-processing threads=" << effective_threads
+		<< ", batchTarget=" << batchTarget << "\n";
+	std::deque<future<string>> batch;
 	int rowCnt(0);
-
-	while (true) {
-		if (j >= num_threads) { j = 0; }
-		if (slots[j].inUse == true && slots[j].fut.wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
-			slots[j].inUse = false;
-			wrTmp += slots[j].fut.get();
-			rowCnt++;
+	auto consumeOldest = [&]() {
+		// Futures are deliberately consumed in submission order, preserving the input matrix order.
+		writer.write(batch.front().get());
+		batch.pop_front();
+		rowCnt++;
+	};
+	auto drainBatch = [&]() {
+		while (!batch.empty()) { consumeOldest(); }
+	};
+	closeInputStream(in);
+	bool headerPassed = false;
+	forEachInputLine(inF, [&](const std::string& line) {
+		if (!headerPassed) {
+			if (!line.empty() && line[0] == '#') { return true; }
+			headerPassed = true;
+			return true;
 		}
-		if (slots[j].inUse == false) {
-			//string line = readJ.get();readJ = async(std::launch::async, safeGetline2, in);
-			if (line.substr(0, 1) != "#" && line.length() >= 5) {
-				slots[j].fut = async(std::launch::async, &Matrix::processLine2line, this, line, cntNA, geneCnt, ini_ColPerRow, sep);
-				//wrTmp += processLine2line( line,cntNA, geneCnt, ini_ColPerRow, sep);
-				geneCnt++;
-				slots[j].inUse = true;
-				j++;
-			}
-			if (!(*in)) { break; }
-			line = safeGetline2(in);
-			if (wrTmp.length() > 1e5) {//outstream handling..
-				wrStr.get();
-				wrStr = async(std::launch::async, writeChunk, out, wrTmp);
-				//writeChunk(out, wrTmp);
-				wrTmp = "";
-			}
-
-		}
-	}
-
-	//last jobs to collect..
-	for (int j = 0; j < num_threads; j++) {
-		if (slots[j].inUse == true) {
-			slots[j].inUse = false;
-			wrTmp += slots[j].fut.get();
-			rowCnt++;
-		}
-	}
-	wrStr.get();
-	(*out) << wrTmp;
+		if (line.empty() || line[0] == '#') { return true; }
+		const size_t idEnd = line.find(sep);
+		if (idEnd != string::npos && line.substr(0, idEnd) == "mapped") { return true; }
+		batch.push_back(pool.enqueue(&Matrix::processLine2line, this, line, 0, geneCnt, ini_ColPerRow, sep));
+		geneCnt++;
+		if (batch.size() >= batchTarget) { consumeOldest(); }
+		return true;
+	}, static_cast<size_t>(std::max(1u, opts->threads)));
+	drainBatch();
+	printProgramTimerStep("normalize processing done");
 
 	/*
 	string rowID,segments;
@@ -869,8 +895,10 @@ Matrix::Matrix(const string inF, const string outF, vector<double> colsums, vect
 
 
 
-	delete in; //in.close();
-	delete out; // out.close();
+	// Finalize gzip workers and the GZI explicitly while this constructor is
+	// still active, then emit a flushed checkpoint for shutdown diagnostics.
+	writer.close();
+	printProgramTimerStep("normalized matrix output finalized");
 }
 
 
@@ -900,29 +928,14 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 		read_subset_genes(xtra);
 	}
 
-	istream* in;
-	if (isGZfile(inF)) {
-#ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in); std::cout << "Reading gzip input "<< inF<<endl;
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-	}
-	else { in = new ifstream(inF.c_str()); }
+	istream* in = openInputStream(inF);
 //ifstream in(inF.c_str());
 	if (!(*in)){
 		cerr2 ("Cant open file " + inF + "\n",11);
 	}
 	int ini_ColPerRow = iniCols(in,sep);
-	delete in;
-	if (isGZfile(inF)) {
-#ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in); 
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-	}
-	else { in = new ifstream(inF.c_str()); }
+	closeInputStream(in);
+	in = openInputStream(inF);
 
 	int cnt(0);
 	cnt=-1;
@@ -944,95 +957,176 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 			outFs[i].close();
 		}
 	}
+
+	if (!writeTmpFiles && !doHigh && opts->mode == "normalize") {
+		struct PrepassChunkResult {
+			std::vector<double> sums;
+			std::vector<std::string> ids;
+			int naCnt;
+			PrepassChunkResult(size_t cols) : sums(cols, 0.0), ids(), naCnt(0) {}
+		};
+
+		int num_threads = std::max(1, static_cast<int>(opts->threads));
+		if (opts->threads <= 1) {
+			num_threads = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
+		}
+		std::cout << "[matrix-prepass] row-processing threads=" << num_threads << "\n";
+		ThreadPool pool(static_cast<size_t>(num_threads));
+		std::deque<std::future<PrepassChunkResult>> pending;
+		std::vector<std::string> lineChunk;
+		size_t chunkLineTarget = 256;
+		if (ini_ColPerRow > 5000) {
+			chunkLineTarget = 16;
+		}
+		else if (ini_ColPerRow > 1000) {
+			chunkLineTarget = 64;
+		}
+		const size_t chunkByteTarget = 4ull * 1024ull * 1024ull;
+		lineChunk.reserve(chunkLineTarget);
+		size_t currentChunkBytes = 0;
+		std::cout << "[matrix-prepass] chunkLineTarget=" << chunkLineTarget
+			<< ", chunkByteTarget=" << chunkByteTarget << "\n";
+		size_t nextRowIdx = 0;
+		int cntNA = 0;
+
+		auto consumeNextChunk = [&]() {
+			PrepassChunkResult res = pending.front().get();
+			pending.pop_front();
+			cntNA += res.naCnt;
+			rowIDs.insert(rowIDs.end(), res.ids.begin(), res.ids.end());
+			for (size_t c = 0; c < res.sums.size(); c++) {
+				colSum[c] += res.sums[c];
+			}
+		};
+
+		auto submitChunk = [&](std::vector<std::string>& chunk) {
+			if (chunk.empty()) { return; }
+			auto lines = std::move(chunk);
+			chunk.clear();
+			chunk.reserve(chunkLineTarget);
+			const size_t chunkStart = nextRowIdx;
+			nextRowIdx += lines.size();
+			pending.push_back(pool.enqueue([this, lines = std::move(lines), chunkStart, ini_ColPerRow, sep]() mutable {
+				PrepassChunkResult result(static_cast<size_t>(ini_ColPerRow - 1));
+				result.ids.reserve(lines.size());
+				for (size_t i = 0; i < lines.size(); i++) {
+					rowRes* ret = this->processLine2Mat1(lines[i], 0, static_cast<int>(chunkStart + i), ini_ColPerRow, sep);
+					if (ret->NAcnt) { result.naCnt++; }
+					result.ids.push_back(ret->rowID);
+					for (size_t c = 0; c < ret->rowV.size(); c++) {
+						result.sums[c] += static_cast<double>(ret->rowV[c]);
+					}
+					delete ret;
+				}
+				return result;
+			}));
+		};
+
+		closeInputStream(in);
+		bool headerPassed = false;
+		forEachInputLine(inF, [&](const std::string& line) {
+			if (!headerPassed) {
+				if (!line.empty() && line[0] == '#') { return true; }
+				headerPassed = true;
+				return true;
+			}
+			if (line.empty() || line[0] == '#') { return true; }
+			const size_t idEnd = line.find(sep);
+			const string candidate = line.substr(0, idEnd);
+			if (candidate == "mapped" || (doSubsets && subset.find(candidate) == subset.end())) { return true; }
+
+			lineChunk.push_back(line);
+			currentChunkBytes += line.size();
+			if (lineChunk.size() >= chunkLineTarget || currentChunkBytes >= chunkByteTarget) {
+				submitChunk(lineChunk);
+				currentChunkBytes = 0;
+				if (pending.size() >= static_cast<size_t>(num_threads * 2)) {
+					consumeNextChunk();
+				}
+			}
+			return true;
+		}, static_cast<size_t>(std::max(1u, opts->threads)));
+
+		submitChunk(lineChunk);
+		currentChunkBytes = 0;
+		while (!pending.empty()) { consumeNextChunk(); }
+
+		#ifdef notRpackage
+		std::cout << "Read " << rowIDs.size() << " rows and " << ini_ColPerRow << " columns\n";
+		#endif
+		printProgramTimerStep("matrix read");
+		return;
+	}
+
 	int geneCnt(0);
 	int cntNA(0);
+	int num_threads = std::max(1, static_cast<int>(opts->threads));
+	if (opts->mode == "normalize" && opts->threads <= 1) {
+		num_threads = std::max(1u, std::thread::hardware_concurrency());
+	}
+	if (!writeTmpFiles) {
+		std::cout << "[matrix-prepass] row-processing threads=" << num_threads << "\n";
+	}
+	ThreadPool pool(static_cast<size_t>(num_threads));
+	deque<future<rowRes*>> pendingRows;
+	auto consumeNextRow = [&]() {
+		rowRes* ret = pendingRows.front().get();
+		pendingRows.pop_front();
+		if (ret->NAcnt) { cntNA++; }
+		addRow(ret);
+		if (rowOcc.size() <= static_cast<size_t>(ret->curRowIdx)) { rowOcc.resize(ret->curRowIdx + 1, 0); }
+		rowOcc[ret->curRowIdx] = ret->Occ;
 
-	//future<string> readJ;
-	//readJ = async(std::launch::async, safeGetline2, in);
-	int num_threads = opts->threads;
-	vector < job3 > slots(num_threads);
-	int j(0);
-	string line = safeGetline2(in);
-	//while (getline_n((*in),line,100000)){
-	//while (safeGetline((*in), line)) {
-	while (true) {
-		cnt++;
-		if (j >= num_threads) { j = 0; }
-		if (slots[j].inUse == true && slots[j].fut.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
-			slots[j].inUse = false;
-			rowRes* ret = slots[j].fut.get();
-			if (ret->NAcnt) {cntNA++;}
-			addRow(ret);
-			rowOcc.push_back(ret->Occ);
-
-			if (writeTmpFiles) {vector<mat_fl>& rowV = ret->rowV;//write to tmp File
-				for (size_t i = 0; i < rowV.size();i++) {
-					if (rowV[i] > 0) {
-						// if id is numeric (number of row) or the actual id as string
-						if (NumericRowId == true) {outStr[i] += std::to_string(ret->curRowIdx) + "\t" + to_string(rowV[i]) + "\n";
-						} else { outStr[i] += ret->rowID + "\t" + to_string(rowV[i]) + "\n";
-						}
+		if (writeTmpFiles) {
+			vector<mat_fl>& rowV = ret->rowV;//write to tmp File
+			for (size_t i = 0; i < rowV.size(); i++) {
+				if (rowV[i] > 0) {
+					// if id is numeric (number of row) or the actual id as string
+					if (NumericRowId == true) { outStr[i] += std::to_string(ret->curRowIdx) + "\t" + to_string(rowV[i]) + "\n";
+					}
+					else { outStr[i] += ret->rowID + "\t" + to_string(rowV[i]) + "\n";
 					}
 				}
 			}
-			delete ret;
 		}
-		if (slots[j].inUse == false) {
-			if (line.substr(0, 1) != "#" &&  line.length() >= 5) {
-				slots[j].fut = async(std::launch::async, &Matrix::processLine2Mat1, this, line,
-					cntNA, geneCnt, ini_ColPerRow, sep);
+		delete ret;
+	};
+
+	closeInputStream(in);
+	bool headerPassed = false;
+	forEachInputLine(inF, [&](const std::string& line) {
+		if (!headerPassed) {
+			if (!line.empty() && line[0] == '#') { return true; }
+			headerPassed = true;
+			return true;
+		}
+		cnt++;
+		if (!line.empty() && line[0] != '#') {
+			const size_t idEnd = line.find(sep);
+			const string candidate = line.substr(0, idEnd);
+			if (candidate != "mapped" && (!doSubsets || subset.find(candidate) != subset.end())) {
+				pendingRows.push_back(pool.enqueue(&Matrix::processLine2Mat1, this, line,
+					cntNA, geneCnt, ini_ColPerRow, sep));
 				geneCnt++;
-				slots[j].inUse = true;
+				if (pendingRows.size() >= static_cast<size_t>(num_threads)) { consumeNextRow(); }
 			}
-			//string line = readJ.get();
-			//readJ = async(std::launch::async, safeGetline2, in);
-			if (!(*in)) { break; }
-			line = safeGetline2(in);
 		}
 
-		if (cnt % 1000 == 0 && writeTmpFiles){
+		if (cnt % 1000 == 0 && writeTmpFiles) {
 			// every 1000 lines, write to file. The rest will be written later
-			for (size_t cnt2=0;cnt2<outStr.size();cnt2++){
+			for (size_t cnt2 = 0; cnt2 < outStr.size(); cnt2++) {
 				// we open the file, and close it again, as we dont want to be limited in the number of
 				// files to have open
 				outFs[cnt2].open(outFName[cnt2], ios_base::out | ios::app);
 				outFs[cnt2].precision(12);
-				outFs[cnt2] << outStr[cnt2];outStr[cnt2] = "";
+				outFs[cnt2] << outStr[cnt2]; outStr[cnt2] = "";
 				outFs[cnt2].close();
 			}
 		}
-		j++;
+		return true;
+	}, static_cast<size_t>(std::max(1u, opts->threads)));
 
-	}
-	delete in;//in.close();
-
-
-	for (int j = 0; j < num_threads; j++) {
-		if (slots[j].inUse == true) {
-			rowRes* ret = slots[j].fut.get();
-			slots[j].inUse = false;
-
-			addRow(ret);
-			rowOcc.push_back(ret->Occ);
-
-			if (writeTmpFiles) {
-				vector<mat_fl>& rowV = ret->rowV;//write to tmp File
-				for (size_t i = 0; i < rowV.size(); i++) {
-					if (rowV[i] > 0) {
-						// if id is numeric (number of row) or the actual id as string
-						if (NumericRowId == true) {
-							outStr[i] += std::to_string(ret->curRowIdx) + "\t" + to_string(rowV[i]) + "\n";
-						}
-						else {
-							outStr[i] += ret->rowID + "\t" + to_string(rowV[i]) + "\n";
-						}
-					}
-				}
-			}
-			delete ret;
-
-		}
-	}
+	while (!pendingRows.empty()) { consumeNextRow(); }
 
 	//output of matrices..
 	ofstream out;
@@ -1070,6 +1164,7 @@ Matrix::Matrix(options* opts, const string xtra, vector<string>& outFName,
 	#ifdef notRpackage
 	std::cout << "Read " << geneCnt << " rows and " << ini_ColPerRow << " columns\n";
 	#endif
+	printProgramTimerStep("matrix read");
 }
 
 Matrix::Matrix(options* opts, const string xtra, bool highLvl)
@@ -1081,25 +1176,14 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	//reads matrix from HDD
 	//into mem.. careful with big files!
 	if (doHigh){
+		HI = new HigherMats(opts);
 		read_hierachy(xtra,opts);
 	}
 	else if (xtra.length() > 2){
 		read_subset_genes(xtra);
 	}
 //	ifstream in(inF.c_str());
-	istream* in;
-	if (isGZfile(inF)) {
-#ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in);
-		std::cout << "Reading gzip input\n";
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-
-	}
-	else {
-		in = new ifstream(inF.c_str());
-	}
+	istream* in = openInputStream(inF);
 	if (!(*in)){
 		cerr2 ("Cant open file " +inF +"\n",11);
 	}
@@ -1115,19 +1199,11 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	}
 	cnt = -1;
 
-	delete in;
-	if (isGZfile(inF)) {
-#ifdef _gzipread
-		in = new igzstream(inF.c_str(), ios::in);
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-	}
-	else { in = new ifstream(inF.c_str()); }
+	closeInputStream(in);
+	in = openInputStream(inF);
 	
 	readColNms(in,sep);
 	if (doHigh) {
-		HI = new HigherMats(opts);
 		HI->iniHigh(maxLvl, LvlNms, colIDs);
 		HI->setDelims();
 	}
@@ -1152,49 +1228,44 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	//future<string> readJ;
 	//readJ = async(std::launch::async, safeGetline2, in);
 
-	int num_threads = opts->threads;
-	vector < job3 > slots(num_threads);
-	int j(0); 
-	string line = safeGetline2(in);
+	int num_threads = std::max(1, static_cast<int>(opts->threads));
+	ThreadPool pool(static_cast<size_t>(num_threads));
+	std::deque<std::future<rowRes*>> pendingRows;
+	auto consumeNextRow = [&]() {
+		rowRes* ret = pendingRows.front().get();
+		pendingRows.pop_front();
+		if (ret->NAcnt) { cntNA++; }
+		addRow(ret);
+		delete ret;
+	};
 
-	while (true) {
-		if (j >= num_threads) { j = 0; }
-		if (slots[j].inUse == true && slots[j].fut.wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
-			slots[j].inUse = false;
-			rowRes* ret = slots[j].fut.get();
-			if (ret->NAcnt) { cntNA++; }
-			addRow(ret);
-			delete ret;
+	closeInputStream(in);
+	bool headerPassed = false;
+	forEachInputLine(inF, [&](const std::string& line) {
+		if (!headerPassed) {
+			if (!line.empty() && line[0] == '#') { return true; }
+			headerPassed = true;
+			return true;
 		}
-		if (slots[j].inUse == false) {
-			//string line = readJ.get();readJ = async(std::launch::async, safeGetline2, in);
-			if (line.substr(0, 1) != "#" && line.length() >= 5) {
-				slots[j].fut = async(std::launch::async, &Matrix::processLine2Mat1, this, line,
-					cntNA, geneCnt, ini_ColPerRow, sep);
+		cnt++;
+		if (!line.empty() && line[0] != '#') {
+			const size_t idEnd = line.find(sep);
+			const string candidate = line.substr(0, idEnd);
+			if (candidate != "mapped" && (!doSubsets || subset.find(candidate) != subset.end())) {
+				pendingRows.push_back(pool.enqueue(&Matrix::processLine2Mat1, this, line,
+					cntNA, geneCnt, ini_ColPerRow, sep));
 				geneCnt++;
-				slots[j].inUse = true;
+				if (pendingRows.size() >= static_cast<size_t>(num_threads)) { consumeNextRow(); }
 			}
-			if (!(*in)) { break; }
-			line = safeGetline2(in);
 		}
-		j++;
-	}
+		return true;
+	}, static_cast<size_t>(std::max(1u, opts->threads)));
 
-	//last jobs to collect..
-	for (int j = 0; j < num_threads; j++) {
-		if (slots[j].inUse == true) {
-			rowRes* ret = slots[j].fut.get();
-			addRow(ret);
-			slots[j].inUse = false;
-			delete ret;
-		}
-	}
-
-	//in.close();
-	delete in;
+	while (!pendingRows.empty()) { consumeNextRow(); }
 	if (sparse) {
 		maxCols = (int)matSp.size();
-		std::cout << "Sparse Matrix: Read " << maxCols << " columns and " << cnt << " rows\n";
+		std::cout << "Sparse Matrix: Read " << maxCols << " columns and "
+			<< rowIDs.size() << " rows\n";
 	} else {
 		maxCols = (int)mat.size();
 #ifdef notRpackage
@@ -1206,6 +1277,7 @@ Matrix::Matrix(options* opts, const string xtra, bool highLvl)
 	if (geneCnt == 0) {
 		cerr2("No genes read.. aborting\n", 73);
 	}
+	printProgramTimerStep("matrix read");
 }
 Matrix::Matrix(const vector<string>& rnms, const vector<string>& cnms) :
 	rowIDs(rnms), colIDs(cnms), maxCols((int)cnms.size()), loadPrimaryMat(true)
@@ -1263,8 +1335,11 @@ rowRes* Matrix::processLine2Mat1(string  line, int cntNA,
 			ret->curRowIdx = geneCnt;
 
 			if (doHigh) {//check if present in hierachy already..
-				fnd = LUp.find(rowID);
-				if (fnd == LUp.end()) {//needs to be added to HMat
+				if (excludedHierarchyIDs.find(rowID) != excludedHierarchyIDs.end()) {
+					// Conflicting hierarchy assignments are deliberately omitted from every hierarchy output.
+					ret->taxa.clear();
+				}
+				else if ((fnd = LUp.find(rowID)) == LUp.end()) {//needs to be added to HMat
 					ret->taxa = vector<string>(maxLvl, "-1");
 					NAinrow = true;
 					if (cntNA < 50) {
@@ -1288,7 +1363,11 @@ rowRes* Matrix::processLine2Mat1(string  line, int cntNA,
 			}
 			continue;
 		}
-		mat_fl tmp = atof(segments.c_str());
+		if (cnt2 < 0 || static_cast<size_t>(cnt2) >= ret->rowV.size()) {
+			delete ret;
+			cerr2("Too many columns in matrix row " + rowID + "\n", 64);
+		}
+		mat_fl tmp = parseMatrixNumber(segments, rowID, cnt2);
 		/*if (doHigh) {//1:finds relevant rowID, extracts taxa; 2:add on all HighLvl mats
 			for (int tt = 0; tt < maxLvl; tt++) {
 				HI[tt]->set(taxa[tt], cnt2, tmp);
@@ -1340,6 +1419,8 @@ void Matrix::addRow(rowRes* ret){
 	
 	//single core'd
 	lock_guard<mutex> lock(protect);
+	if (ret->rowID.empty()) { cerr2("Encountered a matrix row with an empty ID.\n", 64); }
+	if (rowID_hash.find(ret->rowID) != rowID_hash.end()) { cerr2("Duplicate matrix row ID: " + ret->rowID + "\n", 64); }
 	rowID_hash[ret->rowID] = static_cast<int>(curRowIdx);
 	if (rowIDs.size() <= curRowIdx) {
 		rowIDs.resize((curRowIdx+1), "");
@@ -1440,6 +1521,7 @@ void Matrix::prepCoex(options* opt) {
 }
 void Matrix::complimentarity(vector<string>& cand, vector<float>& id, options* opt,
 	vector<vector<int>>& retI, vector<vector<string>>& retS, int& tcID, int& tcCE) {
+	(void)opt;
 	vector<int> idx1(cand.size(),0);
 	/*if (coexcl_thr > 50) {
 		coexcl_thr = 50;
@@ -1490,26 +1572,21 @@ void Matrix::mergeRows(vector<int>& idx) {
 	}
 	int tar = idx[0];
 	if (sparse) {
-		cerr << "M";
 		for (uint j = 0; j < matSp.size(); j++) {//sample wise addition
-			auto fTar = matSp[j].find(tar);
-			auto Etake = matSp[j].end();
 			lock_guard<mutex> lock(protect);
+			mat_fl merged = 0;
+			auto fTar = matSp[j].find(tar);
+			if (fTar != matSp[j].end()) { merged = fTar->second; }
 			for (uint i = 1; i < idx.size(); i++) {
 				int take = idx[i];
 				auto fTake = matSp[j].find(take);
-				if (fTake != Etake) {
-					if (fTar != Etake) {
-						fTar->second += fTake->second;
-					}
-					else {
-						matSp[j][tar] = fTake->second;
-					}
-					fTake->second = 0;
+				if (fTake != matSp[j].end()) {
+					merged += fTake->second;
+					matSp[j].erase(take);
 				}
 			}
+			if (merged != 0) { matSp[j][tar] = merged; }
 		}
-		cerr << "R";
 	} else {
 		for (uint i = 1; i < idx.size(); i++) {
 			int take = idx[i];
@@ -1523,7 +1600,7 @@ void Matrix::mergeRows(vector<int>& idx) {
 }
 
 declutRes* Matrix::declutCalc(vector<string>* txt, options* opts) {
-	int nsize = static_cast<int>(txt->size()) - 1;
+	int nsize = txt->size() > 1 ? static_cast<int>(txt->size()) - 1 : 0;
 	//vector<string> curClus(nsize, "");
 	vector<float> clusIDs(nsize, 0.f);
 	declutRes* dRes = new declutRes(nsize);
@@ -1543,18 +1620,15 @@ declutRes* Matrix::declutCalc(vector<string>* txt, options* opts) {
 }
 
 declutRes* Matrix::declutCalc2(vector<string>* txt, options* opts) {
-	int nsize = static_cast<int>(txt->size()) - 1;
+	int nsize = static_cast<int>(txt->size());
 	//vector<string> curClus(nsize, "");
 	declutRes* dRes = new declutRes(nsize);
 	vector<float> clusIDs(nsize, 0.f);
-	if (txt->size() > clusIDs.size()) {
-		clusIDs.resize(txt->size() + 10, 0);
-	}
-
-	if (dRes->curClus.size() < 2) {
+	if (txt->size() < 2) {
 		delete txt;
 		return dRes;
 	}
+	dRes->curClus = *txt;
 	//test if these genes have co-exclusion profiles
 	//vector<vector<string>> smpls;
 	//vector<vector<int>> idxs;
@@ -1590,25 +1664,26 @@ void Matrix::decluter(options* opts) {
 	bool cont(true);
 	while (cont) {
 		clbl = getClusBlock(incl, lastline);
-		clusBlocks++;
+		if (clbl->txt.size() > 1) { clusBlocks++; }
 		cont = clbl->cont;
 		delete clbl;
 	}
 	fclose(incl);
 	lastline = "";
-	std::cout << "Found " << clusBlocks << "total cluster blocks\n";
+	std::cout << "Found " << clusBlocks << " total cluster blocks\n";
 	incl = fopen(inF.c_str(), "r");
 
 
 
 	ofstream list(outFlist.c_str(), ios_base::out);
-	int num_threads = opts->threads;
+	int num_threads = std::max(1, static_cast<int>(opts->threads));
+	ThreadPool pool(static_cast<size_t>(num_threads));
 	vector<job2> slots(num_threads);
 	int j(0); int cnt(0);
 	while (true) {
 		//work through clstr file
 		if (j >= num_threads) { j = 0; }
-		if (slots[j].inUse == true && slots[j].fut.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+		if (slots[j].inUse == true) {
 			slots[j].inUse = false;
 			declutRes* dR = slots[j].fut.get();
 			totalMergedID += dR->totalMergedID;	totalMergedCE += dR->totalMergedCE;
@@ -1622,9 +1697,15 @@ void Matrix::decluter(options* opts) {
 		if (slots[j].inUse == false) {
 			clbl = getClusBlock(incl, lastline);
 			bool conti = clbl->cont;
+			if (clbl->txt.size() <= 1) {
+				delete clbl;
+				if (!conti) { break; }
+				continue;
+			}
 			cnt++;
 			vector<string>* trans = new vector<string>(clbl->txt);
-			slots[j].fut = async(std::launch::async, &Matrix::declutCalc, this, trans, opts);
+			delete clbl;
+					slots[j].fut = pool.enqueue(&Matrix::declutCalc, this, trans, opts);
 			slots[j].inUse = true;
 			if (!conti) { break; }
 		}
@@ -1654,6 +1735,7 @@ void Matrix::decluter(options* opts) {
 	fclose(incl);
 	delete fet;
 	std::cout << "Merged " << totalMergedID << "/" << totalMergedCE << "/" << cases << " cases\nWriting new matrix to " << outF2 << endl;
+	printProgramTimerStep("processing done");
 
 	//everything calculated, time to write results out..
 	this->writeMatrix(outF2, false);
@@ -1700,6 +1782,7 @@ void Matrix::decluter2(options* opts) {
 	ofstream list(outFlist.c_str(), ios_base::out);
 	vector<float> clusIDs(1000, 0);
 	int num_threads = opts->threads;
+	ThreadPool pool(static_cast<size_t>(num_threads));
 	vector<job2> slots(num_threads);
 	int cnt (0),j(0);
 	while (cont) {
@@ -1725,8 +1808,7 @@ void Matrix::decluter2(options* opts) {
 				vector<string>* trans = new vector<string>(curClus);
 //				declutRes*dR = declutCalc2(trans, opts);
 //				delete dR;
-				cerr << join(curClus, ",") << endl;
-				slots[j].fut = async(std::launch::async, &Matrix::declutCalc2, this, trans, opts);
+				slots[j].fut = pool.enqueue(&Matrix::declutCalc2, this, trans, opts);
 				slots[j].inUse = true;
 				if (cnt % 50000 == 0) {
 					cerr << cnt << "/" << clusBlocks << "...  " << endl;
@@ -1777,6 +1859,7 @@ void Matrix::decluter2(options* opts) {
 
 	std::cout << "Merged " << totalMergedID << " / " << totalMergedCE << " / " << cases << " cases\n";
 	std::cout << "Writing new matrix to " << outF2 << endl;
+	printProgramTimerStep("processing done");
 
 	list.close();
 	fclose(incl);
@@ -1786,23 +1869,6 @@ void Matrix::decluter2(options* opts) {
 	this->writeMatrix(outF2, false,num_threads);
 
 }
-void Matrix::estimateModuleAbund(char ** argv, int argc) {
-	char* argX[1];
-	options* psOpt = new options(0, argX);
-	psOpt->modDB = argv[4];
-	psOpt->output = argv[3];
-	//string doModKOest = argv[4];
-	//read module DB
-
-	//ini options
-	psOpt->modRedund = atoi(argv[5]);
-	psOpt->modModCompl = (float)atof(argv[6]);
-	psOpt->modEnzCompl = (float)atof(argv[7]);
-	psOpt->modWrXtraInfo = false;
-	//std::cout << argv[8] << endl;
-	if (argc > 8 && strcmp(argv[8], "1") == 0) { psOpt->modWrXtraInfo = true; }
-}
-
 //minimal sum per column, used for rarefaction min raredep
 double Matrix::getMinColSum() {
 	if (colSum.size() > 0) {
@@ -1820,23 +1886,20 @@ double Matrix::getMinColSum() {
 }
 
 column Matrix::getMinColumn(uint offset ) {
-	column* minimalColumn = new column();
-	if (colSum.size() > 0) {
-		double minE = colSum[0];
-		string ID;
-		for (uint i = 0; i < colSum.size(); i++) {
-			if (minE > colSum[i]) {
+	column minimalColumn;
+	if (offset < colSum.size()) {
+		double minE = colSum[offset];
+		string ID = offset < colIDs.size() ? colIDs[offset] : "";
+		for (uint i = offset + 1; i < colSum.size(); i++) {
+			if (colSum[i] < minE) {
 				minE = colSum[i];
-				ID = colIDs[i];
+				ID = (i < colIDs.size()) ? colIDs[i] : "";
 			}
 		}
-		minimalColumn->id = ID;
-		minimalColumn->colsum = minE;
-		return *minimalColumn;
+		minimalColumn.id     = ID;
+		minimalColumn.colsum = minE;
 	}
-	else {
-		return *minimalColumn;
-	}
+	return minimalColumn;
 }
 
 void Matrix::resizeMatRows(uint x, mat_fl def ) {
@@ -1871,19 +1934,31 @@ void Matrix::estimateModuleAbund(options* opts) {
 	resizeMatRows(static_cast<uint>(rowIDs.size()));
 
 	//modWrXtraInfo
-	
+
 	modDB->setEnzymCompl(enzyCompl);
 	modDB->setPathwCompl(pathCompl);
 	modDB->setRedund(redundancy);
-	//matrix vector of module abudnance
-	//vector<vector<mat_fl>> modMat(maxCols);
-//	Matrix modMat = Matrix(modDB->modNms(), colIDs);
+
+	if (maxCols == 0) {
+		cerr << "estimateModuleAbund: input matrix has no columns (no samples). Aborting.\n";
+		delete modDB;
+		return;
+	}
+
 	vector<vector<string>> modStr(maxCols);
 	vector<vector<float>> modScore(maxCols);
-
+	const int workerCount = std::max(1, static_cast<int>(opts->threads));
+	ThreadPool pool(static_cast<size_t>(workerCount));
+	std::vector<std::future<void>> jobs;
+	jobs.reserve(static_cast<size_t>(maxCols));
 	for (int i = 0; i < maxCols; i++) {
-		//mat[i] contains KO abundances for 1 sample (i)
-		modDB->calcModAbund(mat[i], i, rowID_hash, modStr[i], modScore[i]);			
+		jobs.push_back(pool.enqueue([this, modDB, &modStr, &modScore, i]() {
+			//mat[i] contains KO abundances for 1 sample (i)
+			modDB->calcModAbund(mat[i], i, rowID_hash, modStr[i], modScore[i]);
+		}));
+	}
+	for (size_t i = 0; i < jobs.size(); i++) {
+		jobs[i].get();
 	}
 	//write description
 	ofstream of; ofstream of2; string nos;
@@ -1892,19 +1967,21 @@ void Matrix::estimateModuleAbund(options* opts) {
 
 	vector<string> moD = modDB->modDescr(); 
 	vector<string> moN = modDB->modNms_numbered();
-/*	string nos = outFile+".descr";
-	of.open(nos.c_str());
-	for (size_t i = 0; i < moD.size(); i++) {
-		of << moN[i] << "\t" << moD[i] << endl;
-	}
-	of.close();
-	*/
+
 	//write KOs used
 	if (writeKOused) {
 		nos = outFile + ".KOused";
 		of.open(nos.c_str());
+		if (!of) {
+			cerr << "estimateModuleAbund: failed to open KOused output file: " << nos << "\n";
+			delete modDB; return;
+		}
 		nos = outFile + ".MODscore";
 		of2.open(nos.c_str());
+		if (!of2) {
+			cerr << "estimateModuleAbund: failed to open MODscore output file: " << nos << "\n";
+			of.close(); delete modDB; return;
+		}
 
 		//write SmplIDs
 		for (size_t i = 0; i < colIDs.size(); i++) {
@@ -1915,13 +1992,14 @@ void Matrix::estimateModuleAbund(options* opts) {
 		for (size_t i = 0; i < moD.size(); i++) {
 			bool hasKOUse = false;
 			for (size_t k = 0; k < modStr.size(); k++) {
-				if (modStr[k][i] != "") { hasKOUse=true; break; }
+				// Guard: modStr[k] is filled by calcModAbund to mods.size(); moD may diverge
+				if (i < modStr[k].size() && modStr[k][i] != "") { hasKOUse = true; break; }
 			}
 			if (!hasKOUse) { continue; }
 			of << moN[i]; of2 << moN[i];
 			for (size_t k = 0; k < modStr.size(); k++) {
-				of << "\t" << modStr[k][i] ;
-				of2 << "\t" << modScore[k][i] ;
+				of  << "\t" << (i < modStr[k].size()  ? modStr[k][i]  : "");
+				of2 << "\t" << (i < modScore[k].size() ? modScore[k][i] : 0.f);
 			}
 			of << endl; of2 << endl;
 		}
@@ -1941,18 +2019,19 @@ void Matrix::addColumn(string cname) {
 	maxCols++;
 	colIDs.push_back(cname);
 	colID_hash[cname] = maxCols - 1;
-	mat.push_back(vector<mat_fl>(mat[0].size()));
+	mat.push_back(vector<mat_fl>(rowIDs.size(), 0));
 }
 void Matrix::addRow(string rname,vector<mat_fl> in) {
+	if (in.size() != mat.size()) { cerr2("New matrix row has the wrong number of columns.\n", 723); }
 	rowIDs.push_back(rname);
-	int curRows = static_cast<int>(mat[0].size());
+	int curRows = mat.empty() ? 0 : static_cast<int>(mat[0].size());
 	rowID_hash[rname] = curRows;
 	for (uint i = 0; i < mat.size(); i++) {
 		mat[i].push_back(in[i]);
 	}
 }
 vector<mat_fl> Matrix::getRow(uint idx) {
-	if (idx > mat[0].size()) {
+	if (mat.empty() || idx >= mat[0].size()) {
 		cerr2("Requested index outside of matrix size: " + itos(idx) + "\n", 723);
 	}
 	vector<mat_fl> ret(mat.size());
@@ -1968,20 +2047,54 @@ Matrix::~Matrix(void)
 	
 }
 
-void Matrix::normalize() {
-	vector<mat_fl> allSums(colIDs.size(), (mat_fl)0);
-	for (size_t smpl = 0; smpl<(colIDs.size()); smpl++) {
-		mat_fl sums(0);
-		for (size_t i = 0; i<rowIDs.size(); i++) {
-			sums += mat[smpl][i];
-		}
-		allSums[smpl] = sums;
+void Matrix::normalize(int threads) {
+	if (colIDs.empty() || rowIDs.empty() || (sparse ? matSp.empty() : mat.empty())) { return; }
+	const size_t requestedThreads = threads > 0
+		? static_cast<size_t>(threads)
+		: static_cast<size_t>(std::max(1u, std::thread::hardware_concurrency()));
+	const size_t threadCount = std::max<size_t>(
+		1, std::min<size_t>(colIDs.size(), requestedThreads));
+	ThreadPool pool(threadCount);
+	vector<double> allSums(colIDs.size(), 0.0);
+	vector<std::future<void>> jobs;
+	jobs.reserve(colIDs.size());
+	for (size_t smpl = 0; smpl < colIDs.size(); smpl++) {
+		jobs.push_back(pool.enqueue([this, &allSums, smpl]() {
+			double sums = 0.0;
+			if (sparse) {
+				for (auto it = matSp[smpl].begin(); it != matSp[smpl].end(); ++it) {
+					sums += static_cast<double>(it->second);
+				}
+			}
+			else {
+				for (size_t i = 0; i < rowIDs.size(); i++) {
+					sums += static_cast<double>(mat[smpl][i]);
+				}
+			}
+			allSums[smpl] = sums;
+		}));
 	}
-	for (size_t smpl = 0; smpl < (colIDs.size()); smpl++) {
-		for (size_t i = 0; i < rowIDs.size(); i++) {
-			mat[smpl][i] /= allSums[smpl];
-		}
+	for (size_t i = 0; i < jobs.size(); i++) { jobs[i].get(); }
+	jobs.clear();
+	jobs.reserve(colIDs.size());
+	for (size_t smpl = 0; smpl < colIDs.size(); smpl++) {
+		if (allSums[smpl] == 0) { continue; }
+		jobs.push_back(pool.enqueue([this, &allSums, smpl]() {
+			if (sparse) {
+				for (auto it = matSp[smpl].begin(); it != matSp[smpl].end(); ++it) {
+					it->second = static_cast<mat_fl>(
+						static_cast<double>(it->second) / allSums[smpl]);
+				}
+			}
+			else {
+				for (size_t i = 0; i < rowIDs.size(); i++) {
+					mat[smpl][i] = static_cast<mat_fl>(
+						static_cast<double>(mat[smpl][i]) / allSums[smpl]);
+				}
+			}
+		}));
 	}
+	for (size_t i = 0; i < jobs.size(); i++) { jobs[i].get(); }
 	/* //DEBUG
 	for (size_t smpl = 0; smpl < (colIDs.size() - 1); smpl++) {
 		mat_fl sums(0);
@@ -1996,6 +2109,7 @@ void Matrix::normalize() {
 void Matrix::transpose(){
 	// takes the matrix and transposes it
 	// column ID and row ID have to be swapped as well
+	if (mat.empty()) { return; }
 	vector< vector< mat_fl > >  transpMat(mat[0].size(), vector< mat_fl >(mat.size()));
 	vector<double> TmpcolSum(transpMat.size(),0);
 	for(uint i = 0; i < mat.size(); i++){
@@ -2029,85 +2143,57 @@ vector<mat_fl> Matrix::getRowSums() {
 	return rowSums;
 }
 
-void Matrix::writeMatrix(const string of, bool onlyFilled, int threads ) {
-	ostream * out;
-	if (isGZfile(of)) {
-#ifdef _gzipread
-		out = new ogzstream(of.c_str(), ios::out);
-		std::cout << "Writing gzip'd matrix\n";
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
+void Matrix::writeMatrix(
+	const string of, bool onlyFilled, int threads, const string& rowHeader) {
+	if (threads < 1) { threads = 1; }
+	CentralOutputWriter out(of, static_cast<size_t>(threads));
+	std::ostringstream header;
+	header.precision(9);
+	header << rowHeader;
+	for (size_t smpl = 0; smpl < (colIDs.size()); smpl++) {
+		header << "\t" << colIDs[smpl];
 	}
-	else {
-		out = new ofstream(of);
-	}
-
-
-	if (!(*out)) {
-		cerr2("Couldn't open matrix output " + of + "\n", 57);
-	}
-	//out.open(of.c_str(), ios_base::out);
-	out->precision(9); *out << "Gene";
-	for (size_t smpl = 0; smpl < (colIDs.size() ); smpl++) {
-		*out << "\t" << colIDs[smpl ];
-	}
-	*out << endl;
+	header << "\n";
+	out.write(header.str());
 	vector<mat_fl> rowSums;
 	//size_t cidS(colIDs.size());
-	vector<future<string>> job (threads);
-	future<bool> wrStr; string tmpSt("");
-	//ini empty job
-	//wrStr = async(std::launch::async, writeChunk, out, tmpSt);
-
-	string tmp(""), tmp2("");
+	ThreadPool pool(static_cast<size_t>(threads));
 	if (onlyFilled) { rowSums = getRowSums(); }
-	int i = -1;
-	while (i< int(rowIDs.size())) {
-		int j = 0;
-		for (; j < threads; j++) {
-			i++;
-			if (onlyFilled && rowSums[i] == 0) {
-				j--; continue;
-			}
-			if (i >= (int)rowIDs.size()) {
-				break;
-			}
-			job[j] = async(std::launch::async, &Matrix::row2line, this, i);
-		}
-		//bool x= wrStr.get();		wrStr = async(std::launch::async, writeChunk, out,tmp);
-		*out << tmp;
-		tmp = "";
-		for (int jk = 0; jk < j; jk++) {
-			tmp += job[jk].get();
+	vector<future<string>> jobs;
+	jobs.reserve(static_cast<size_t>(threads));
+	for (size_t i = 0; i < rowIDs.size(); i++) {
+		if (onlyFilled && rowSums[i] == 0) { continue; }
+		jobs.push_back(pool.enqueue(&Matrix::row2line, this, static_cast<int>(i)));
+		if (jobs.size() == static_cast<size_t>(threads)) {
+			for (size_t j = 0; j < jobs.size(); j++) { out.write(jobs[j].get()); }
+			jobs.clear();
 		}
 	}
-	*out << tmp;
-	
-	delete out;// .close();
+	for (size_t j = 0; j < jobs.size(); j++) { out.write(jobs[j].get()); }
+	out.close();
+	printProgramTimerStep("matrix written");
 }
 string Matrix::row2line(int i) {
-	//*out << rowIDs[i] ;
-	string tmp("");
-	tmp += rowIDs[i];
+	std::ostringstream tmp;
+	tmp << setprecision(9) << rowIDs[i];
 	if (sparse) {
 		for (size_t smpl = 0; smpl < colIDs.size(); smpl++) {
 			auto fnd = matSp[smpl].find(i);
 			if (fnd != matSp[smpl].end()) {
-				tmp += "\t" + to_string(fnd->second);
+				tmp << "\t" << fnd->second;
 			}
 			else {
-				tmp += "\t0";
+				tmp << "\t0";
 			}
 		}
 	}
 	else {
 		for (size_t smpl = 0; smpl < colIDs.size(); smpl++) {
-			tmp += "\t" + to_string(mat[smpl][i]);
+			tmp << "\t" << mat[smpl][i];
 		}
 	}
-	tmp += "\n";
-	return tmp;
+	tmp << "\n";
+	return tmp.str();
 }
 void Matrix::read_subset_genes(const string xtra){
 	string line;
@@ -2130,84 +2216,126 @@ void Matrix::read_subset_genes(const string xtra){
 	}
 }
 void Matrix::read_hierachy(const string xtra, options* opts){// bool xtdHiera){
-	int maxHir = 9;
-	bool xtdHiera = opts->extendHierachy;
-	string funcHieraSep = opts->funcHieraSep;
-	vector<string> features;
+	const int maxHir = 9;
+	const bool xtdHiera = opts->extendHierachy;
+	const string funcHieraSep = opts->funcHieraSep;
+	if (funcHieraSep.empty()) {
+		cerr2("Hierarchy separator must not be empty (option -funcHieraSep).\n", 13);
+	}
+
 	string line;
 	ifstream in(xtra.c_str());
-	vector<stringHash> hiera = HI->getHiera();
-	hiera.resize(maxHir);
+	vector<stringHash> hiera(maxHir);
+	unordered_map<string, int> hierarchyDepths;
 	int cnt = 0;
+	int validCnt = 0;
 	if (!in){
 		cerr2 ("Can't open hierachy file " +xtra +"\n",13);
 	}
+
+	LvlNms.clear();
+	LUp.clear();
+	excludedHierarchyIDs.clear();
+	maxLvl = 0;
+	int headerCnt = 0;
 	for (int k = 0; k < maxHir; k++){
-		//string tmp = ;
 		LvlNms.push_back("L" + stringify((double)k));
 	}
-	stringstream hir; stringstream ss;
-	vector<string> pseudo(maxHir, "?");
-	string segs;
-	string segs2;
+
 	while (getline(in, line, '\n')) {
-		if (line.substr(0, 1) == "#"){ continue; }
+		if (line.empty() || line[0] == '#') { continue; }
 		cnt++;
-		std::fill(pseudo.begin(), pseudo.end(), "?");
-		segs = ""; segs2 = ""; ss.clear();
-		ss << line;
+
+		string segs;
+		string segs2;
+		istringstream ss(line);
 		getline(ss, segs, '\t');
 		getline(ss, segs2, '\t');
-		string spl;
-		hir.clear();
-		hir << segs2;
+		if (isGeneIdHierarchyHeader(segs)) {
+			headerCnt++;
+			continue;
+		}
+		if (segs.empty() || segs2.empty()) {
+			continue;
+		}
+
+		vector<string> pseudo(maxHir, "?");
 		int i = 0;
-		//string lngTax="";
 		string prevH = "";
-		while (getline(hir, spl, funcHieraSep[0])) {
-			//add previous levels
-			pseudo[i] = prevH+spl;
+		const vector<string> levels = splitByToken(segs2, funcHieraSep);
+		for (size_t level = 0; level < levels.size() && i < maxHir; level++) {
+			const string& spl = levels[level];
+			if (spl.empty()) { continue; }
+			pseudo[i] = prevH + spl;
 			if (xtdHiera) {
 				prevH = pseudo[i] + funcHieraSep;
 			}
 			i++;
-			//lngTax += spl + ";";
-			//index possible features
-			if (i >= maxHir){ break; }
 		}
-		//i--;
-		if (i > maxLvl){ 
-			maxLvl = i; 
+		if (i == 0) {
+			continue;
 		}
-		LUp[segs] = pseudo; 
-		//go from maxLvl to all above 
 
+		if (i > maxLvl){
+			maxLvl = i;
+		}
+		if (excludedHierarchyIDs.find(segs) != excludedHierarchyIDs.end()) { continue; }
+		auto previous = LUp.find(segs);
+		if (previous != LUp.end()) {
+			if (previous->second != pseudo) {
+				cerr << "Warning: excluding ambiguous hierarchy mapping for row ID '" << segs
+					<< "' at hierarchy line " << cnt << ".\n";
+				LUp.erase(previous);
+				hierarchyDepths.erase(segs);
+				excludedHierarchyIDs.insert(segs);
+				validCnt--;
+			}
+			continue;
+		}
+		LUp[segs] = pseudo;
+		hierarchyDepths[segs] = i;
+		validCnt++;
 	}
 	in.close();
+	maxLvl = 0;
+	for (const auto& depth : hierarchyDepths) { maxLvl = max(maxLvl, depth.second); }
+
+	if (validCnt == 0 || maxLvl <= 0) {
+		cerr2("Hierarchy file contains no valid mappings: " + xtra + "\n", 13);
+	}
+
 	hiera.resize(maxLvl);
-	//assumes maxLvl is the most resolved 
-	
-	int mostResolved = maxLvl-1;
+	vector<unordered_set<string>> ambiguousHierarchyKeys(maxLvl);
+	int mostResolved = maxLvl - 1;
 	if (opts->hieraSrtDown) {
 		mostResolved = 0;
 	}
-	HI->setMostResolved(mostResolved); 
-	for (auto pseudo1 : LUp) {
-		vector<string> pseudo = pseudo1.second;
-		//string tmp = pseudo[mostResolved];
+	HI->setMostResolved(mostResolved);
+	for (const auto& pseudo1 : LUp) {
+		const vector<string>& pseudo = pseudo1.second;
+		if ((size_t)mostResolved >= pseudo.size() || pseudo[mostResolved] == "?") {
+			continue;
+		}
 		for (int ix = 0; ix < maxLvl ; ix++) {
-			if ((pseudo[ix] == "?")) { continue; }
-			auto fnd = hiera[ix ].find(pseudo[mostResolved]);
-			if (fnd == hiera[ix ].end()) {
-				hiera[ix ][pseudo[mostResolved]] = pseudo[ix];
+			if (pseudo[ix] == "?") { continue; }
+			const string& sourceKey = pseudo[mostResolved];
+			if (ambiguousHierarchyKeys[ix].find(sourceKey) != ambiguousHierarchyKeys[ix].end()) { continue; }
+			auto fnd = hiera[ix].find(sourceKey);
+			if (fnd == hiera[ix].end()) {
+				hiera[ix][sourceKey] = pseudo[ix];
+			} else if (fnd->second != pseudo[ix]) {
+				cerr << "Warning: excluding ambiguous hierarchy relation for '" << sourceKey
+					<< "' at level " << ix << ".\n";
+				hiera[ix].erase(fnd);
+				ambiguousHierarchyKeys[ix].insert(sourceKey);
 			}
-			
 		}
 	}
 
 	HI->setHiera(hiera);
 	#ifdef notRpackage
-	std::cout << "Read hierachy. Found " << maxLvl << " hierachical levels.\n";
+	std::cout << "Read hierachy. Parsed " << validCnt << " valid rows (" << cnt << " non-comment rows; "
+		<< headerCnt << " geneID header rows removed), found " << maxLvl << " hierachical levels.\n";
 	#endif
 }
 void Matrix::splitOnHDD(string out_seed){
@@ -2244,6 +2372,7 @@ void Matrix::writeSums(string out_seed){
 
 
 bool sortPair(const pair<double, string>& left, const pair<double, string>& right){
+	if (left.first != right.first) { return left.first > right.first; }
 	return left.second < right.second;
 }
 
@@ -2258,9 +2387,9 @@ vector< pair <double, string>> Matrix::getColSums(bool sorted){
 	if(sorted == false){
 		return colsums;
 	}else{
-		// now we sort this vector
-		std::sort(colsums.begin(), colsums.end(), sortPair);
-		return colsums;
+		vector<pair<double, string>> sortedSums = colsums;
+		std::sort(sortedSums.begin(), sortedSums.end(), sortPair);
+		return sortedSums;
 	}
 }
 void Matrix::writeColSums(string outF){
@@ -2346,11 +2475,16 @@ void HigherMats::createHighMats() {
 	vector<string> rFs = rM->getFeatures();
 	for (size_t R = 0; R < rFs.size(); R++) {
 		vector<mat_fl> row = rM->getRow(static_cast<uint>(R));
-		for (int i = 0; i < mostResolved; i++) {
+		for (int i = 0; i < maxLvl; i++) {
+			if (i == mostResolved) { continue; }
+			if (rFs[R] == "-1") {
+				string unassigned = "-1";
+				HI[i]->set(unassigned, row);
+				continue;
+			}
 			auto fnd = hiera[i].find(rFs[R]);
 			if (fnd == hiera[i].end()) {
-				cerr << "Could not find " << rFs[R] << " in hierachy!\n";
-				//exit(82);
+				// Ambiguous relations were already reported and removed while reading the hierarchy.
 			} else {
 				//string nTax = fnd->second;
 				HI[i]->set(fnd->second, row);
@@ -2366,18 +2500,27 @@ void HigherMats::writeMats(string outF, vector<string> LvlNms,bool filter) {
 		}
 		string oF2 = outF + LvlNms[i] + ".txt";
 		out.open(oF2.c_str(), ios_base::out);
+		if (!out) { cerr2("Could not open sumMat output " + oF2 + "\n", 74); }
+		out << setprecision(numeric_limits<mat_fl>::max_digits10);
 		if (filter) {
-			HI[i]->print(out, opts->mean, opts->occMin, opts->occPerSmpl);
+			HI[i]->print(out, opts->mean, opts->median, opts->occMin, opts->occPerSmpl);
 		} else {
-			HI[i]->print(out, false, -1, -1);
+			HI[i]->print(out, false, false, -1, -1);
+		}
+		out.flush();
+		if (!out) {
+			out.close();
+			cerr2("I/O error while writing sumMat output " + oF2 + "\n", 74);
 		}
 		out.close();
+		if (out.fail()) { cerr2("I/O error while closing sumMat output " + oF2 + "\n", 74); }
+		out.clear();
 	}
 }
 void HigherMats::applyFilters() {
 	for (int i = 0; i < maxLvl; i++) {
 		HI[i]->prep();
-		HI[i]->filter(opts->mean, opts->occMin, opts->occPerSmpl);
+		HI[i]->filter(opts->mean, opts->median, opts->occMin, opts->occPerSmpl);
 	}
 }
 void HigherMats::setRow(rowRes* ret) {
@@ -2385,6 +2528,7 @@ void HigherMats::setRow(rowRes* ret) {
 		//higher level not calculated here..
 		//return;
 	//}
+	if (ret->taxa.empty()) { return; }
 	if (opts->highFromLow) {
 		int tt = mostResolved;
 		HI[tt]->set(ret->taxa[tt], ret->rowV);
@@ -2397,90 +2541,31 @@ void HigherMats::setRow(rowRes* ret) {
 
 
 HMat::HMat(string L, vector<string> Samples, vector<string> Features)
-:LvlName(L), FeatureNs(Features), SampleNs(Samples),mat(0), catCnt(0), maxCatCnt(0), hiTaNAcnt(0)
-, funcAnnoAND(","), funcAnnoOR("|"),filterDone(false)
+:LvlName(L), FeatureNs(Features), SampleNs(Samples),mat(0), catCnt(0), catValues(0), maxCatCnt(0), hiTaNAcnt(0)
+, funcAnnoAND(","), funcAnnoOR("|"),filterDone(false), trackMedian(false)
 {
 	empty = vector<mat_fl>(SampleNs.size(), 0);
 	mat.resize(FeatureNs.size(), empty);
 	catCnt.resize(FeatureNs.size(), vector<uint>(SampleNs.size(), 0));
+	catValues.resize(FeatureNs.size());
 	for (unsigned int i = 0; i < FeatureNs.size(); i++){
 		Feat2mat[FeatureNs[i]] = i;
 	}
 }
 
 void HMat::set(string& kk, int j, mat_fl v) {
-
-	//no reason to continue..
-	if (v <= 0.f) { return; }
-
-	mat_fl div(1);
-	//check if key is single key, or multiple keys (split by | )
-	size_t pos(kk.find("|", 0)), npos(0);
-	vector<string> subkk(0);
-	while (pos != string::npos) {
-		subkk.push_back(kk.substr(npos, pos - npos));
-		npos = pos + 1;
-		pos = kk.find("|", npos);
-		div += 1.f;
-	}
-	subkk.push_back(kk.substr(npos));
-
-	for (uint t = 0; t < subkk.size(); t++) {
-		string yy = subkk[t];
-		//find key
-		std::map<string, int>::iterator i = Feat2mat.find(yy);
-		if (i == Feat2mat.end()) {
-			Feat2mat[yy] = (int)mat.size();
-			mat.push_back(vector<mat_fl>(SampleNs.size(), 0));
-			catCnt.push_back(vector<uint>(SampleNs.size(), 0));
-			FeatureNs.push_back(yy);
-			i = Feat2mat.find(yy);
-			hiTaNAcnt++;
-			//
-			if (hiTaNAcnt < 100) {
-				cerr2("Could not find entry " + yy + " in registered subset\n");
-			}
-			//std::exit(23);
-
-		}
-		if ((*i).second > (int)mat.size()) {
-			cerr2("implied row index larger than high level mat!\nAborting..", 25);
-		}
-		mat[(*i).second][j] += v / div;
-		catCnt[(*i).second][j]++;
-		//if (j == 0) {			catCnt[(*i).second]++;		}
-	}
+	if (j < 0 || static_cast<size_t>(j) >= SampleNs.size()) { cerr2("Hierarchy sample index out of range.\n", 25); }
+	vector<mat_fl> row(SampleNs.size(), 0);
+	row[j] = v;
+	set(kk, row);
 }
 void HMat::set(string& kk, vector<mat_fl>& v) {
-
-	mat_fl div(1);
-	//check if key is single key, or multiple keys (split by | )
-	size_t pos(kk.find(funcAnnoOR, 0)), npos(0);
-	vector<string> subkk(0);
-	while (pos != string::npos) {
-		subkk.push_back(kk.substr(npos, pos - npos));
-		npos = pos + 1;
-		pos = kk.find(funcAnnoOR, npos);
-		div += 1.f;
-	}
-	if (div > 1.f){
-		div = 1.f / div;
-		subkk.push_back(kk.substr(npos));
-	} else {//only now check funcHAnnoAND
-		pos = kk.find(funcAnnoAND, 0);
-		npos=0;
-		//vector<string> subkk(0);
-		 while (pos != string::npos) {
-			 subkk.push_back(kk.substr(npos, pos - npos));
-			 npos = pos + 1;
-			 pos = kk.find(funcAnnoAND, npos);
-			 div += 1.f;
-		 }
-		 subkk.push_back(kk.substr(npos));
-	}
-	if (subkk.size() == 0) {
-		subkk.push_back( kk);
-	}
+	if (v.size() != SampleNs.size()) { cerr2("Hierarchy row has the wrong number of samples.\n", 25); }
+	const bool alternatives = !funcAnnoOR.empty() && kk.find(funcAnnoOR) != string::npos;
+	vector<string> subkk = splitByToken(kk, alternatives ? funcAnnoOR : funcAnnoAND);
+	subkk.erase(remove_if(subkk.begin(), subkk.end(), [](const string& x) { return x.empty(); }), subkk.end());
+	if (subkk.empty()) { return; }
+	const mat_fl weight = alternatives ? static_cast<mat_fl>(1.0 / subkk.size()) : static_cast<mat_fl>(1.0);
 
 	for (uint t = 0; t < subkk.size(); t++) {
 		string yy = subkk[t];
@@ -2490,14 +2575,10 @@ void HMat::set(string& kk, vector<mat_fl>& v) {
 			Feat2mat[yy] = (int)mat.size();
 			mat.push_back(vector<mat_fl>(SampleNs.size(), 0));
 			catCnt.push_back(vector<uint>(SampleNs.size(), 0));
+			catValues.push_back(unordered_map<uint, vector<mat_fl>>());
 			FeatureNs.push_back(yy);
 			i = Feat2mat.find(yy);
 			hiTaNAcnt++;
-			//
-			if (hiTaNAcnt < 100) {
-				cerr2("Could not find entry " + yy + " in registered subset\n");
-			}
-			//std::exit(23);
 
 		}
 		int idx = (*i).second;
@@ -2506,8 +2587,10 @@ void HMat::set(string& kk, vector<mat_fl>& v) {
 		}
 		for (size_t j = 0; j < v.size(); j++) {
 			if (v[j] > 0) {
-				mat[idx][j] += v[j] * div;
+				const mat_fl contribution = v[j] * weight;
+				mat[idx][j] += contribution;
 				catCnt[(*i).second][j]++;
+				if (trackMedian) { catValues[idx][static_cast<uint>(j)].push_back(contribution); }
 			}
 		}
 		//if (j == 0) {			catCnt[(*i).second]++;		}
@@ -2526,7 +2609,7 @@ void HMat::prep() {
 	}
 }
 
-void HMat::filter(bool mean, int occMin, int occPerSmpl) {
+void HMat::filter(bool mean, bool useMedian, int occMin, int occPerSmpl) {
 	if (filterDone) { return; }
 	vector<bool> rms(FeatureNs.size(), false);
 	for (size_t i = 0; i < FeatureNs.size(); i++) {
@@ -2535,7 +2618,10 @@ void HMat::filter(bool mean, int occMin, int occPerSmpl) {
 			if ((int)catCnt[i][j] <= occPerSmpl) {
 				mat[i][j] = 0;
 			}
-			if (mean) {
+			if (useMedian) {
+				auto found = catValues[i].find(static_cast<uint>(j));
+				mat[i][j] = found == catValues[i].end() ? 0 : ::median(found->second);
+			} else if (mean) {
 				if (catCnt[i][j] == 0) {
 					mat[i][j] = 0;
 				} else {
@@ -2552,12 +2638,14 @@ void HMat::rmRow(vector<bool>& rms) {
 	vector<string> FeatureNs2;
 	vector< vector< mat_fl > > mat2;
 	vector<vector<uint>> catCnt2;
+	vector<unordered_map<uint, vector<mat_fl>>> catValues2;
 	vector<uint> maxCatCnt2;
 	for (size_t x = 0; x < rms.size(); x++) {
 		if (rms[x]) { continue; }
 		FeatureNs2.push_back(FeatureNs[x]);
 		mat2.push_back(mat[x]);
 		catCnt2.push_back(catCnt[x]);
+		catValues2.push_back(catValues[x]);
 		maxCatCnt2.push_back(maxCatCnt[x]);
 	}
 
@@ -2565,14 +2653,20 @@ void HMat::rmRow(vector<bool>& rms) {
 	FeatureNs = FeatureNs2;
 	mat = mat2;
 	catCnt = catCnt2;
+	catValues = catValues2;
 	maxCatCnt = maxCatCnt2;
+	Feat2mat.clear();
+	for (size_t i = 0; i < FeatureNs.size(); i++) { Feat2mat[FeatureNs[i]] = static_cast<int>(i); }
 }
 
-vector<mat_fl> HMat::getRow(uint x, bool mean) {
-	if (mean) {
+vector<mat_fl> HMat::getRow(uint x, bool mean, bool useMedian) {
+	if (mean || useMedian) {
 		vector<mat_fl> ret = mat[x];	
 		for (size_t j = 0; j < SampleNs.size(); j++) {
-			if (catCnt[x][j] == 0) {
+			if (useMedian) {
+				auto found = catValues[x].find(static_cast<uint>(j));
+				ret[j] = found == catValues[x].end() ? 0 : ::median(found->second);
+			} else if (catCnt[x][j] == 0) {
 				ret[j] = 0;
 			} else {
 				ret[j] = (mat[x][j] / (mat_fl)catCnt[x][j]);
@@ -2585,7 +2679,7 @@ vector<mat_fl> HMat::getRow(uint x, bool mean) {
 }
 
 	
-void HMat::print(ofstream& O,bool mean,int occMin ,int occPerSmpl){
+void HMat::print(ofstream& O,bool mean, bool useMedian, int occMin ,int occPerSmpl){
 	O << LvlName ;
 	for (size_t i = 0; i < SampleNs.size(); i++){
 		O << "\t" << SampleNs[i];
@@ -2594,24 +2688,19 @@ void HMat::print(ofstream& O,bool mean,int occMin ,int occPerSmpl){
 
 	for (size_t i = 0; i < FeatureNs.size(); i++){
 		//bool doMean = mean;
-		if (FeatureNs[i] == "-1") {
-			O << "\n" << FeatureNs[i];
-			//doMean = false; //-1 does not get mean'd
-			for (size_t j = 0; j < SampleNs.size(); j++) {
-				O << "\t" << mat[i][j];
-			}
-			continue;
-		}
 		//not enough overall support for category?
 		if (occMin>0 && (int)maxCatCnt[i] <= occMin) { continue; }
 		O << "\n" << FeatureNs[i];
 		for (size_t j = 0; j < SampleNs.size(); j++){
 			if (occPerSmpl>0 && (int)catCnt[i][j] <= occPerSmpl) {
 				O << "\t0";
+			} else if (useMedian) {
+				auto found = catValues[i].find(static_cast<uint>(j));
+				O << "\t" << (found == catValues[i].end() ? 0 : ::median(found->second));
 			} else if (!mean) {
 				O << "\t" << mat[i][j];
 			} else {
-				O << "\t" << (mat[i][j] / (mat_fl)catCnt[i][j]);
+				O << "\t" << (catCnt[i][j] == 0 ? 0 : mat[i][j] / (mat_fl)catCnt[i][j]);
 			}
 		}
 	}
@@ -2621,40 +2710,100 @@ void HMat::print(ofstream& O,bool mean,int occMin ,int occPerSmpl){
 
 VecFiles::VecFiles(const string inF, const string outF, const string xtra) :
 infiles(0){
-}
+	(void)xtra;
+	stringstream names(inF);
+	string file;
+	while (getline(names, file, ',')) {
+		size_t begin = 0, end = file.size();
+		while (begin < end && isspace(static_cast<unsigned char>(file[begin]))) { begin++; }
+		while (end > begin && isspace(static_cast<unsigned char>(file[end - 1]))) { end--; }
+		file = file.substr(begin, end - begin);
+		if (!file.empty()) { infiles.push_back(file); }
+	}
+	if (infiles.size() < 2) { cerr2("mergeMat requires two or more comma-separated input matrices (or repeated -i options).\n", 13); }
 
-int VecFiles::getIdx(const string&){
-	int idx(-1);
-	return idx;
-}
+	struct MergeData {
+		vector<string> samples;
+		unordered_map<string, string> rows;
+	};
+	vector<MergeData> data(infiles.size());
+	vector<string> rowOrder;
+	unordered_set<string> knownRows;
+	unordered_set<string> knownSamples;
+	string rowHeader;
 
+	for (size_t f = 0; f < infiles.size(); f++) {
+		istream* input = nullptr;
+		if (isGZfile(infiles[f])) {
+#ifdef _gzipread
+			input = new igzstream(infiles[f].c_str(), ios::in);
+#else
+			cerr2("gzip input is not supported by this build.\n", 50);
+#endif
+		} else { input = new ifstream(infiles[f].c_str()); }
+		if (input == nullptr || !(*input)) { delete input; cerr2("Cannot open mergeMat input " + infiles[f] + "\n", 11); }
 
-void VecFiles::readVecFile(const string inF){
-	string line;
-	ifstream in(inF.c_str());
-
-	//int ini_ColPerRow(0),cnt(0);
-
-	//string rowID="";
-	while(getline(in,line,'\n')) {
-		if(line.substr(0,1) == "#" || line.length()<2){continue;}
-		string segments;
-		//int ColsPerRow = 0; // Initialize counter.
-		stringstream ss;
-		ss << line;
-		int cnt2(-1);
-		//int CurIdx(-1);
-		while (getline(ss,segments,'\t')) {
-			cnt2++;
-			if (cnt2 == -1){
-				//rowID = segments;
-				//CurIdx = this->getIdx(segments);
-				continue;
-			}
-			mat_fl tmp =  atof(segments.c_str());
-			if (tmp==0){continue;}
-
+		string line;
+		bool foundHeader = false;
+		while (safeGetline((*input), line)) {
+			if (!line.empty() && line[0] != '#') { foundHeader = true; break; }
 		}
+		if (!foundHeader) { delete input; cerr2("Matrix has no header: " + infiles[f] + "\n", 64); }
+		vector<string> header = splitByToken(line, "\t");
+		if (header.size() < 2 || header[0].empty()) { delete input; cerr2("Matrix header must contain a row-ID column and at least one sample: " + infiles[f] + "\n", 64); }
+		if (f == 0) { rowHeader = header[0]; }
+		for (size_t c = 1; c < header.size(); c++) {
+			if (header[c].empty() || !knownSamples.insert(header[c]).second) {
+				delete input;
+				cerr2("Duplicate or empty sample ID in mergeMat inputs: " + header[c] + "\n", 64);
+			}
+			data[f].samples.push_back(header[c]);
+		}
+
+		size_t lineNo = 1;
+		while (safeGetline((*input), line)) {
+			lineNo++;
+			if (line.empty() || line[0] == '#') { continue; }
+			vector<string> fields = splitByToken(line, "\t");
+			if (fields.size() != header.size() || fields[0].empty()) {
+				delete input;
+				cerr2("Wrong field count or empty row ID at " + infiles[f] + ":" + to_string(lineNo) + "\n", 64);
+			}
+			if (data[f].rows.find(fields[0]) != data[f].rows.end()) {
+				delete input;
+				cerr2("Duplicate row ID '" + fields[0] + "' in " + infiles[f] + "\n", 64);
+			}
+			for (size_t c = 1; c < fields.size(); c++) { parseMatrixNumber(fields[c], fields[0], static_cast<int>(c)); }
+			const size_t firstTab = line.find('\t');
+			data[f].rows[fields[0]] = line.substr(firstTab + 1);
+			if (knownRows.insert(fields[0]).second) { rowOrder.push_back(fields[0]); }
+		}
+		delete input;
 	}
 
+	ostream* output = nullptr;
+	if (isGZfile(outF)) {
+#ifdef _gzipread
+		output = new ogzstream(outF.c_str(), ios::out);
+#else
+		cerr2("gzip output is not supported by this build.\n", 50);
+#endif
+	} else { output = new ofstream(outF.c_str()); }
+	if (output == nullptr || !(*output)) { delete output; cerr2("Cannot open mergeMat output " + outF + "\n", 11); }
+	(*output) << rowHeader;
+	for (size_t f = 0; f < data.size(); f++) {
+		for (size_t c = 0; c < data[f].samples.size(); c++) { (*output) << '\t' << data[f].samples[c]; }
+	}
+	(*output) << '\n';
+	for (size_t r = 0; r < rowOrder.size(); r++) {
+		(*output) << rowOrder[r];
+		for (size_t f = 0; f < data.size(); f++) {
+			auto found = data[f].rows.find(rowOrder[r]);
+			if (found != data[f].rows.end()) { (*output) << '\t' << found->second; }
+			else { for (size_t c = 0; c < data[f].samples.size(); c++) { (*output) << "\t0"; } }
+		}
+		(*output) << '\n';
+	}
+	delete output;
+	cout << "Merged " << infiles.size() << " matrices into " << outF << " (" << rowOrder.size() << " rows, " << knownSamples.size() << " samples).\n";
 }

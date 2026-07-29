@@ -45,11 +45,11 @@ namespace GZSTREAM_NAMESPACE {
 
 	class gzstreambuf : public std::streambuf {
 	private:
-		static const int bufferSize = 47 + 256;    // size of data buff
-												   // totals 512 bytes under g++ for igzstream at the end.
+		static const int putbackSize = 64;
+		static const int bufferSize = 256 * 1024;  // larger read/write buffer for high-throughput gzip streaming
 
 		gzFile           file;               // file handle for compressed file
-		char             buffer[bufferSize]; // data buffer
+		char             buffer[bufferSize + putbackSize]; // data buffer + putback area
 		char             opened;             // open/close state of stream
 		int              mode;               // I/O mode
 
@@ -65,10 +65,10 @@ namespace GZSTREAM_NAMESPACE {
 		}
 	public:
 		gzstreambuf() : opened(0) {
-			setp(buffer, buffer + (bufferSize - 1));
-			setg(buffer + 4,     // beginning of putback area
-				buffer + 4,     // read position
-				buffer + 4);    // end position      
+			setp(buffer, buffer + (bufferSize + putbackSize - 1));
+			setg(buffer + putbackSize,     // beginning of putback area
+				buffer + putbackSize,     // read position
+				buffer + putbackSize);    // end position      
 								// ASSERT: both input & output capabilities will not be used together
 		}
 		int is_open() { return opened; }
@@ -95,6 +95,7 @@ namespace GZSTREAM_NAMESPACE {
 			file = gzopen(name, fmode);
 			if (file == 0)
 				return (gzstreambuf*)0;
+			gzbuffer(file, 1024 * 1024);
 			opened = 1;
 			return this;
 		}
@@ -117,18 +118,18 @@ namespace GZSTREAM_NAMESPACE {
 				return EOF;
 			// Josuttis' implementation of inbuf
 			int n_putback = gptr() - eback();
-			if (n_putback > 4)
-				n_putback = 4;
-			memcpy(buffer + (4 - n_putback), gptr() - n_putback, n_putback);
+			if (n_putback > putbackSize)
+				n_putback = putbackSize;
+			memcpy(buffer + (putbackSize - n_putback), gptr() - n_putback, n_putback);
 
-			int num = gzread(file, buffer + 4, bufferSize - 4);
+			int num = gzread(file, buffer + putbackSize, bufferSize);
 			if (num <= 0) // ERROR or EOF
 				return EOF;
 
 			// reset buffer pointers
-			setg(buffer + (4 - n_putback),   // beginning of putback area
-				buffer + 4,                 // read position
-				buffer + 4 + num);          // end of buffer
+			setg(buffer + (putbackSize - n_putback),   // beginning of putback area
+				buffer + putbackSize,                 // read position
+				buffer + putbackSize + num);          // end of buffer
 
 											// return next character
 			return *reinterpret_cast<unsigned char *>(gptr());

@@ -1,5 +1,6 @@
 #pragma once
 #include "ClStr2Mat.h"
+#include "Mosaic.h"
 #include "options.h"
 
 

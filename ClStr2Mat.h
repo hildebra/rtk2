@@ -41,10 +41,11 @@ private:
 };
 struct clusWrk {
 	clusWrk(void) :geneNamesStr(""), matStr(""),Vec(0), Clnum(-1) {}
-	clusWrk(int s, long x) :geneNamesStr(""), Vec(s, (smat_fl)0), Clnum(x) {}
+	clusWrk(int s, int64_t x) :geneNamesStr(""), Vec(s, (mat_fl)0), Clnum(x) {}
 	void generateMatStr(){
 		matStr.reserve(5000);
 		stringstream s;
+		s << setprecision(numeric_limits<mat_fl>::max_digits10);
 		for (size_t i = 0; i < Vec.size(); i++) {
 			if (Vec[i] == 0) {s<<"\t0";
 			}else {s << "\t" << Vec[i];}
@@ -54,11 +55,11 @@ struct clusWrk {
 	}
 	string geneNamesStr;
 	string matStr;
-	vector<smat_fl> Vec;
-	long Clnum;
+	vector<mat_fl> Vec;
+	int64_t Clnum;
 };
 //clusWrk* workClusBlock(textBlock*, const size_t, const string& sampleSeq,const vector<GeneAbundance*>& GAs, const SmplOccurMult*, long);
-void printVec(clusWrk * curClus, ostream*, ofstream*);// , const vector<bool>& useSmpl);
+void printVec(clusWrk * curClus, CentralOutputWriter*, ofstream*);// , const vector<bool>& useSmpl);
 
 /*
 class GeneAbds
@@ -79,17 +80,16 @@ public:
 	ClStr2Mat(options* opts);
 		//const  string inF, const string outF, const string mapF, const string baseP, 	bool covCalc, bool oldMap);
 	virtual ~ClStr2Mat();
-	smat_fl GAabundance(int idxM, string& gene) { return GAs[idxM]->getAbundance(gene); }
-	smat_fl GASupAbundance(int idxM, string& gene) { return GAsSup[idxM]->getAbundance(gene); }
+	mat_fl GAabundance(int idxM, string& gene) { return GAs[idxM]->getAbundance(gene); }
+	mat_fl GASupAbundance(int idxM, string& gene) { return GAsSup[idxM]->getAbundance(gene); }
 	void addSums(clusWrk* curClus) {
-		const vector<smat_fl>& pr = curClus->Vec;
-		sumMtx.lock();
+		const vector<mat_fl>& pr = curClus->Vec;
+		lock_guard<mutex> guard(sumMtx);
 		for (size_t i = 0; i < pr.size(); i++) {
 			SmplSum[i] += pr[i];
 		}
-		sumMtx.unlock();
 	}
-	clusWrk* workClusBlock(textBlock* inVs, long CLidx,bool);
+	clusWrk* workClusBlock(textBlock* inVs, int64_t CLidx,bool);
 private:
 	struct job {
 		std::future <clusWrk*> fut;
@@ -112,7 +112,7 @@ private:
 	void finish_write();
 	
 	
-	long lastClIdWr;
+	int64_t lastClIdWr;
 	list<clusWrk*> tmpSave;
 	//unordered_map<long, clusWrk*> tmpSave;
 	//core routines (con be parralelized later)
@@ -128,19 +128,21 @@ private:
 	//vector<string> baseP; // only needed in readmap
 	//vector<bool> useSmpl; // potentially slow, but simple
 	vector<string> mapGr;
-	vector<smat_fl> SmplSum;
+	vector<mat_fl> SmplSum;
 	size_t smplN, smplNsup;
 	//size_t curr ;
 	//string lastline;
 	string sampleSep;
 	//output IO
-	ostream* matO;
+	CentralOutputWriter* matO;
 	ofstream* geneNames;
 
 	mutex sumMtx;
+	mutex reportMtx;
+	rtk_count malformedCDHit;
+	rtk_count malformedCDHitWarned;
 
 
 	//threads
 	jobW wrThr;
 };
-

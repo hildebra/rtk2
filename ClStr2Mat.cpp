@@ -1,43 +1,49 @@
 #include "ClStr2Mat.h"
 
+static string trimWhitespace(const string& value) {
+	size_t begin = 0;
+	size_t end = value.size();
+	while (begin < end && isspace(static_cast<unsigned char>(value[begin]))) { begin++; }
+	while (end > begin && isspace(static_cast<unsigned char>(value[end - 1]))) { end--; }
+	return value.substr(begin, end - begin);
+}
 
 
-void printVec(clusWrk * curClus, ostream* mO, ofstream* gN) {//, const vector<bool>& useSmpl) {
-	long CLidx = curClus->Clnum;
-	//string outStr;outStr.reserve(4000);outStr = to_string(CLidx);
-	//important to have this after outStr creation!
-	//(*gN) << outStr + curClus->geneNamesStr;
-	(*gN) << CLidx<< curClus->geneNamesStr;
-	(*mO) << CLidx << curClus->matStr;// CLidx;
-
-	/*const vector<smat_fl>& pr = curClus->Vec;
-	for (size_t i = 0; i < pr.size(); i++) {
-		//if (!useSmpl[i]) { continue; }
-		if (pr[i] == 0) {
-			(*mO) << "\t0"; //outStr += 
-		}
-		else {
-			(*mO) << "\t" << pr[i]; //outStr += 
-		}
-		//SmplSum[i] += pr[i];
+void printVec(clusWrk * curClus, CentralOutputWriter* mO, ofstream* gN) {//, const vector<bool>& useSmpl) {
+	if (curClus == nullptr) {
+		cerr2("printVec received null cluster pointer\n", 68);
 	}
-	//outStr += "\n"; (*mO)<< outStr
-	(*mO) << endl;
-	*/
+	int64_t CLidx = curClus->Clnum;
+	(*gN) << CLidx << curClus->geneNamesStr;
+	mO->write(to_string(CLidx) + curClus->matStr);
+	if (!(*gN)) {
+		delete curClus;
+		cerr2("I/O error while writing geneMat output rows\n", 69);
+	}
 	delete curClus;
 }
-clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs, 
-	 long CLidx, bool doSups) {
+clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs,
+	 int64_t CLidx, bool doSups) {
 	clusWrk* ret(nullptr);
 	if (!doSups) {
 		ret = new clusWrk(static_cast<int>(smplN), CLidx);
 	} else {
 		ret = new clusWrk(static_cast<int>(smplNsup), CLidx);
 	}
+	auto reportMalformed = [&](const string& reason, const string& entry) {
+		constexpr rtk_count maxMalformedWarnings = 5;
+		lock_guard<mutex> guard(reportMtx);
+		malformedCDHit++;
+		if (malformedCDHitWarned < maxMalformedWarnings) {
+			malformedCDHitWarned++;
+			cerr << "Warning: malformed CD-HIT entry in cluster " << CLidx << " (" << reason << "): " << entry << "\n";
+		}
+	};
 	bool repFound = false;
 	for (uint i = 0; i < inVs->txt.size(); i++) {
 		string &line = inVs->txt[i];
 		if (i == 0) {//new cluster, add headerInfo
+			if (line.empty() || line[0] != '>') { reportMalformed("invalid cluster header", line); }
 			ret->geneNamesStr = "\t" + line;
 			continue;
 		}
@@ -45,28 +51,45 @@ clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs,
 
 		//1 get gene, sample (deparse)
 		size_t pos = line.find("nt, >");
+		if (pos == string::npos) {
+			reportMalformed("missing 'nt, >' marker", line);
+			continue;
+		}
 		size_t pos2 = line.find("...", pos + 4);
+		if (pos2 == string::npos || pos2 <= pos + 5) {
+			reportMalformed("missing or empty gene identifier", line);
+			continue;
+		}
 		string gene = line.substr(pos + 5, pos2 - pos - 5);
 
-		if (!repFound && line.back() == '*') {//report representative gene
+		const size_t finalMarker = line.find_last_not_of(" \t\r");
+		if (!repFound && finalMarker != string::npos && line[finalMarker] == '*') {//report representative gene
 			ret->geneNamesStr += "\t" + gene + "\n";
 			repFound = true;
 		}
 
 		//bool geneInAssembl(true);
 		pos = gene.find(sampleSep);
+		if (pos == string::npos || pos == 0) {
+			reportMalformed("gene identifier is missing a sample separator", line);
+			continue;
+		}
 		string sample;
 		//SmplOccurITmult smNum;
-		pos2 = gene.find("_L", pos + 3);
-		if (pos != string::npos && pos2 != string::npos) { //has the characteristic "__" sample separator
+		pos2 = gene.find("_L", pos + sampleSep.size());
+		if (pos2 == string::npos) {
+			reportMalformed("gene identifier is missing a contig locus marker", line);
+			continue;
+		}
+		{ //has the characteristic "__" sample separator
 			sample = gene.substr(0, pos);
 			auto smNum = smpls.find(sample);
 			if (smNum == smpls.end()) {
 #ifdef notRpackage
-				cerr << "incorrect sample name: " << sample << "::" << gene << endl;
-				continue;
-				//exit(55);
+				lock_guard<mutex> guard(reportMtx);
+				cerr << "Warning: unknown geneMat sample name: " << sample << "::" << gene << endl;
 #endif
+				continue;
 			}
 			//2 get abundance
 			//Contig + Sample Info will allow to create contig linkage between samples (CCH)
@@ -92,16 +115,14 @@ clusWrk* ClStr2Mat::workClusBlock(textBlock* inVs,
 				}
 			}
 		}
-		else {
-			//geneInAssembl = false;
-		}
 
 	}
 
 
 	if (!repFound) {
 		ret->geneNamesStr += "\t?\n";
-		cerr << "No RepSeq found for " << ret->geneNamesStr << " -1" << endl;
+		lock_guard<mutex> guard(reportMtx);
+		cerr << "Warning: no representative sequence found for cluster " << CLidx << "\n";
 	}
 	delete inVs;
 
@@ -124,7 +145,7 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 	smplLoc(0), //baseP(0), 
 	mapGr(0),SmplSum(0),
 	smplN(0), smplNsup(0),
-	sampleSep("__")
+	sampleSep("__"), malformedCDHit(0), malformedCDHitWarned(0)
 {
 
 	std::cout << "Gene clustering matrix creation\n";
@@ -134,6 +155,7 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 	const string inF = opts->input;
 	const string outF = opts->output;
 	const string mapF = opts->map;
+	if (mapF.empty()) { cerr2("geneMat requires at least one mapping file via -map.\n", 56); }
 	//const string basePX = opts->referenceDir;
 	const bool doGZ = opts->gzOut;
 	//flag whether supplementary abundances will be included in output matrix
@@ -155,22 +177,8 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 	string matCmpr = "";
 	if (doGZ) { matCmpr = ".gz"; }
 	string outF2 = outF + ".mat" + matCmpr;
-	if (doGZ) {
-#ifdef _gzipread
-		matO = new ogzstream(outF2.c_str(), ios::out);
-		std::cout << "Writing gzip'd matrix\n";
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-	}
-	else {
-		matO = new ofstream(outF2);
-	}
-
-	
-	if (!(*matO)) {
-		cerr2 ("Couldn't open matrix output " +outF + ".mat" + matCmpr +"\n",57);
-	}
+	matO = new CentralOutputWriter(
+		outF2, static_cast<size_t>(std::max(1u, opts->threads)));
 	geneNames = new ofstream(outF + ".genes2rows.txt");
 	if (!(*geneNames)) {
 		cerr2( "Couldn't open report file " + outF + ".genes2rows.txt" +"\n", 56);
@@ -181,6 +189,8 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 	//read map(s) and check that
 	stringstream ss2(mapF);  string segments;
 	while (getline(ss2, segments, ',')) {
+		segments = trimWhitespace(segments);
+		if (segments.empty()) { cerr2("geneMat received an empty mapping-file entry.\n", 56); }
 		string baseP = ""; //SmplOccurMult CntMapGrps ;
 		//also reads abundances
 		read_map(segments,  baseP, opts);
@@ -195,23 +205,29 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 		if (XX.size() == 0) { continue; }
 		SmplNmsVec[ XX[XX.size()-1] ] = smplRid[(*it).first];
 	}
+	if (GAs.size() != SmplNmsVec.size()) { cerr2("Primary abundance/sample count mismatch while building gene matrix.\n", 68); }
+	for (size_t i = 0; i < SmplNmsVec.size(); i++) {
+		if (SmplNmsVec[i].empty()) { cerr2("Could not resolve output name for geneMat sample index " + to_string(i) + ".\n", 68); }
+	}
 	std::cout << "Calculating abundance matrix on "<< smplN <<" samples (this may take awhile)\n";
-	(*matO) << "Genes";
+	std::ostringstream matrixHeader;
+	matrixHeader << "Genes";
 	for (size_t i = 0; i < SmplNmsVec.size(); i++) {
 		//if (!useSmpl[i]) { continue; }
-		(*matO) << "\t" << SmplNmsVec[i];
+		matrixHeader << "\t" << SmplNmsVec[i];
 	}
 	SmplSum.resize(smplN, 0.f);
 	if (calcSupplCov) {
 		//some basic assertions..
-		assert(SmplNmsVec.size() == GAsSup.size());
-		assert(GAs.size() == GAsSup.size());
+		if (SmplNmsVec.size() != GAsSup.size() || GAs.size() != GAsSup.size()) {
+			cerr2("Supplementary abundance/sample count mismatch while building gene matrix.\n", 68);
+		}
 		int supcnt = static_cast<int>(GAsSup.size());
 		smplSupIdx.resize(GAsSup.size(), -1);
 		for (size_t i = 0; i < SmplNmsVec.size(); i++) {
 			//if (!useSmpl[i]) { continue; }
 			if (!GAsSup[i]->isEmpty()) {
-				(*matO) << "\t" << SmplNmsVec[i] + ".sup";
+				matrixHeader << "\t" << SmplNmsVec[i] + ".sup";
 				smplSupIdx[i] = supcnt; supcnt++;
 			}
 		}
@@ -220,80 +236,84 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 	}
 
 
-	(*matO) << endl;
+	matrixHeader << "\n";
+	matO->write(matrixHeader.str());
 
 	(*geneNames) << "#GID\tCluster\tRepSeq\n";
 	//CCH = new ContigCrossHit((int)smplN);
 	//CCH->setSmplNms(SmplNmsVec);
 	//SparseMatrix * mat = new SparseMatrix();
-	long CLidx = 2; //start at number 2
+	int64_t CLidx = 2; //start at number 2
 	//const string sampleStrSep = "__";
 	//sampleSep = "__";
 	//vector<smat_fl> SmplSum(smplN, 0.f);
 	
 	int numthr = opts->threads-1;// -1 to include wrThr
 	if (numthr <= 0) { numthr = 1; }
+	ThreadPool pool(static_cast<size_t>(numthr));
 
-	//thread pool
-	vector < job > slots(numthr);
-	
-
-
-	//bool repFound = false;
-	textBlock* clbl;
+	// Keep only a bounded window of jobs and consume it in submission order.
+	// This preserves deterministic output without allowing the reorder buffer to grow with the input.
+	deque<future<clusWrk*>> pendingClusters;
 	string lastline = "";
-	//std::future <textBlock*> readThr;
-	//readThr = async(std::launch::async, getClusBlock, incl, lastline);
-	//readThr = async(std::launch::async, test);
-
-	int j (0);
-	int tCnt (0);
+	rtk_count tCnt(0);
 	double total_Counts(0);
+	bool abortWork(false);
+	auto collectOldestCluster = [&]() {
+		clusWrk* curClus = nullptr;
+		try {
+			curClus = pendingClusters.front().get();
+		}
+		catch (const std::exception& ex) {
+			cerr << "geneMat worker exception: " << ex.what() << "\n";
+			abortWork = true;
+		}
+		catch (...) {
+			cerr << "geneMat worker exception: unknown\n";
+			abortWork = true;
+		}
+		pendingClusters.pop_front();
+		if (curClus != nullptr) {
+			if (abortWork) { delete curClus; }
+			else { manage_write(curClus); }
+		}
+	};
 
 	while (true) {
-		clbl = getClusBlock(incl2, lastline);
+		textBlock* clbl = getClusBlock(incl2, lastline);
+		if (clbl->txt.size() == 0 || (clbl->txt.size() == 1 && clbl->txt[0].empty())) {
+			delete clbl;
+			break;
+		}
+		const bool hasMoreClusters = clbl->cont;
 		tCnt++;
-		//clbl = readThr.get();
-		//lastline = clbl->lastLine;
-		//readThr = async(std::launch::async, getClusBlock, &incl, lastline);
-
-		
-		//clusWrk* curClus = workClusBlock(clbl, smplN, CLidx,sampleStrSep,GAs, &smpls);
-
-		//search all threads for empty slot to push job into..
-		while(true) {
-			if (j >= numthr) { j = 0; }
-			if (slots[j].inUse == true && slots[j].fut.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
-				slots[j].inUse = false;
-				clusWrk* curClus = slots[j].fut.get();
-				//this->addSums(curClus);
-				manage_write(curClus);
-				//printVec( curClus, matO, geneNames);
-			}
-			if (slots[j].inUse == false) {
-				slots[j].fut = async(std::launch::async, &ClStr2Mat::workClusBlock, this, clbl, CLidx, calcSupplCov);
-				CLidx++;
-				slots[j].inUse = true;
-				break;//job submitted, break search for empty thread
-			}
-			j++;
+		try {
+			pendingClusters.push_back(pool.enqueue(&ClStr2Mat::workClusBlock, this, clbl, CLidx, calcSupplCov));
 		}
-		if (!clbl->cont) { break; }
-		
-	}
-	for (j = 0; j < numthr; j++) {//collect remaining jobs
-		if (slots[j].inUse == true) {
-			clusWrk* curClus = slots[j].fut.get();
-			//this->addSums(curClus);
-			manage_write(curClus);
-			//printVec(curClus, matO, geneNames);
-			slots[j].inUse = false;
-			CLidx++;
+		catch (...) {
+			delete clbl;
+			throw;
 		}
+		CLidx++;
+		if (pendingClusters.size() >= static_cast<size_t>(numthr)) { collectOldestCluster(); }
+		if (abortWork || !hasMoreClusters) { break; }
 	}
-	//wrThr.fut.get();
+	while (!pendingClusters.empty()) { collectOldestCluster(); }
+	if (abortWork) {
+		cerr2("geneMat aborted due to worker failure; output may be incomplete\n", 70);
+	}
 	finish_write();
-	finish_write();
+	if (!tmpSave.empty()) {
+		cerr2("geneMat writer queue not empty after drain; missing cluster blocks or ordering gap detected\n", 73);
+	}
+	if (malformedCDHit > 0) {
+		const rtk_count suppressed = malformedCDHit - malformedCDHitWarned;
+		cerr << "Warning summary: geneMat encountered " << malformedCDHit << " malformed CD-HIT entries";
+		if (suppressed > 0) {
+			cerr << " (" << malformedCDHitWarned << " shown, " << suppressed << " suppressed)";
+		}
+		cerr << ".\n";
+	}
 
 	for (size_t i = 0; i < SmplNmsVec.size(); i++) {
 		total_Counts += SmplSum[i];
@@ -303,27 +323,36 @@ ClStr2Mat::ClStr2Mat(options* opts):lastClIdWr(1),GAs(0), GAsSup(0),
 	
 
 	incl2.close();
-	//std::fclose(incl);
-	//matO->close(); 
+	geneNames->flush();
+	matO->flush();
 	geneNames->close();
-	//matO->close();
-	delete matO; delete geneNames;
+	matO->close();
+	delete matO;
+	delete geneNames;
 
 	ofstream* matS = new ofstream((outF + ".mat.sum"), ofstream::out);
+	if (!(*matS)) {
+		delete matS;
+		cerr2("Couldn't open output sum file " + outF + ".mat.sum\n", 71);
+	}
+	(*matS) << setprecision(numeric_limits<mat_fl>::max_digits10);
 	for (size_t i = 0; i < SmplNmsVec.size(); i++) {
-		//if (!useSmpl[i]) { continue; }
-		//std::cout << SmplNmsVec[i] << "\t" << SmplSum[i] << endl;
 		(*matS) << SmplNmsVec[i] << "\t" << SmplSum[i] << endl;
 	}
 	if (smplN < smplNsup) {
 		for (size_t i = 0; i < SmplNmsVec.size(); i++) {
 			if (smplSupIdx[i] != -1) {
-				(*matS) << SmplNmsVec[i]+".sup" << "\t" << SmplSum[smplSupIdx[i]] << endl;
+				(*matS) << SmplNmsVec[i] + ".sup" << "\t" << SmplSum[smplSupIdx[i]] << endl;
 			}
 		}
-
 	}
-	matS->close();  delete matS;
+	if (!(*matS)) {
+		matS->close();
+		delete matS;
+		cerr2("I/O error while writing output sum file " + outF + ".mat.sum\n", 72);
+	}
+	matS->close();
+	delete matS;
 	std::cout << "Finished Gene matrix conversion\n";
 
 }
@@ -411,6 +440,7 @@ void ClStr2Mat::read_map(const string mapF, string& baseP, options* opts) {
 			//if (cnt > 0) { continue; }
 			if (cnt == 0) {
 				while (getline(ss, segments, '\t')) {
+					segments = trimWhitespace(segments);
 					sbcnt++;
 					if (sbcnt == 0 && segments != "#SmplID") {
 						cerr << "Map has to start with tag \"#SmplID\"\n"; exit(83);
@@ -435,11 +465,12 @@ void ClStr2Mat::read_map(const string mapF, string& baseP, options* opts) {
 				}
 			}
 			while (getline(ss, segments, '\t')) {
+				segments = trimWhitespace(segments);
 				if (segments == "#OutPath") {
-					getline(ss, segments, '\t'); baseP1 = segments;
+					getline(ss, segments, '\t'); baseP1 = trimWhitespace(segments);
 				}
 				if (segments == "#RunID") {
-					getline(ss, segments, '\t'); baseP2 = segments;
+					getline(ss, segments, '\t'); baseP2 = trimWhitespace(segments);
 				}
 			}
 
@@ -465,18 +496,30 @@ void ClStr2Mat::read_map(const string mapF, string& baseP, options* opts) {
 		stringstream ss(line); string segments;
 		vector<string> curLine(0);
 		while (getline(ss, segments, '\t')) {
-			curLine.push_back(segments);
+			curLine.push_back(trimWhitespace(segments));
 		}
-		if (skSmplCol > -1 && curLine[skSmplCol] == "1") { continue; }
-		if (assGrpN >= 0 && int(curLine.size()) <= assGrpN) {
+		if (curLine.size() < 2) {
+			cerr << "Skipping malformed map line " << cnt << " in " << mapF << "\n";
+			continue;
+		}
+		if (skSmplCol > -1 && (int)curLine.size() > skSmplCol && curLine[skSmplCol] == "1") { continue; }
+		if (assGrpN >= 0 && (int)curLine.size() <= assGrpN) {
 			curLine.resize(assGrpN + 1, "");
 		}
-
+		if (mapGrpN >= 0 && (int)curLine.size() <= mapGrpN) {
+			curLine.resize(mapGrpN + 1, "");
+		}
+		if ((int)curLine.size() <= map2folderIdx) {
+			cerr << "Skipping malformed map line " << cnt << ": missing Path/SmplPrefix in " << mapF << "\n";
+			continue;
+		}
 
 		string smpID = curLine[0];
+		if (smpID.empty()) {
+			cerr << "Skipping malformed map line " << cnt << ": empty sample id in " << mapF << "\n";
+			continue;
+		}
 
-
-		//getline(ss, segments, '\t');
 		//idx 1 for old folder structure, 0 for new folder structure
 		string subDir = curLine[map2folderIdx];
 
@@ -542,7 +585,7 @@ void ClStr2Mat::read_map(const string mapF, string& baseP, options* opts) {
 	std::cout << "Reading primary abundances from " << smplN << " samples\n";
 	SmplOccur currCntMpGr;
 	uint smplsIncl(0), smplsInclSup(0);
-	long totalCnts(0);
+	mat_fl totalCnts(0);
 	for (uint i = preMapSize; i < smplN; i++) {
 		if (!mapGrpCnt(currCntMpGr,  CntMapGrps,i, false)) { continue; }
 		string abPath = baseP + "/" + smplLoc[i];
@@ -645,7 +688,8 @@ void ClStr2Mat::sealMap() {// only required for mapping group.. don't use
 
 ///////////////////////////////////////////////////
 void ContigCrossHit::addHit(int Smpl, int Ctg) {
-
+	(void)Smpl;
+	(void)Ctg;
 }
 
 
@@ -685,18 +729,7 @@ GeneAbundance::GeneAbundance(const string path, const string abunF, bool isSup):
 
 	//isGZfile
 
-	istream* in;
-	if (isGZfile(newS)) {
-#ifdef _gzipread
-		in = new igzstream(newS.c_str(), ios::in);
-		std::cout << "Reading gzip input\n";
-#else
-		std::cout << "gzip not supported in your rtk build\n"; exit(50);
-#endif
-	}
-	else {
-		in = new ifstream(newS.c_str());
-	}
+	istream* in = openInputStream(newS);
 	if (!(*in)) {
 #ifdef notRpackage
 		cerr << "Can't open abundance infile " << newS << endl; std::exit(99);
@@ -715,23 +748,49 @@ GeneAbundance::GeneAbundance(const string path, const string abunF, bool isSup):
 		//string line(buf);
 		*/
 	string line;
+	size_t lineNo = 0;
+	bool hasPositiveAbundance = false;
 	while (getline((*in), line, '\n')) {
+		lineNo++;
+		if (line.empty() || line[0] == '#') { continue; }
 		size_t pos = line.find("\t");
+		if (pos == string::npos || pos == 0 || pos + 1 >= line.size()) {
+			closeInputStream(in);
+			cerr2("Malformed gene abundance row at " + newS + ":" + to_string(lineNo) + "\n", 36);
+		}
 		string gene = line.substr(0, pos);
-		GeneAbu[gene] = (smat_fl)atof(line.substr(pos + 1).c_str());
+		string valueText = line.substr(pos + 1);
+		char* end = nullptr;
+		errno = 0;
+		double value = strtod(valueText.c_str(), &end);
+		while (end != nullptr && *end != '\0' && isspace(static_cast<unsigned char>(*end))) { end++; }
+		if (end == valueText.c_str() || end == nullptr || *end != '\0' || errno == ERANGE || !isfinite(value) || value < 0 || value > numeric_limits<mat_fl>::max()) {
+			closeInputStream(in);
+			cerr2("Invalid gene abundance at " + newS + ":" + to_string(lineNo) + "\n", 36);
+		}
+		if (GeneAbu.find(gene) != GeneAbu.end()) {
+			closeInputStream(in);
+			cerr2("Duplicate gene abundance ID '" + gene + "' in " + newS + "\n", 36);
+		}
+		GeneAbu[gene] = static_cast<mat_fl>(value);
+		if (value > 0.0) { hasPositiveAbundance = true; }
 		
 	}
-	delete in;
+	closeInputStream(in);
+	if (isSuppl && !hasPositiveAbundance) {
+		GeneAbu.clear();
+		isEmp = true;
+	}
 
 	//fclose(in);
 }
-smat_fl GeneAbundance::getAbundance(const string x) {
+mat_fl GeneAbundance::getAbundance(const string x) {
 	if (isPsAss) {
-		return (smat_fl) 1.f;//return one read count
+		return (mat_fl)1;//return one read count
 	}
 	SmplAbunIT fnd = GeneAbu.find(x);
 	if (fnd == GeneAbu.end()) {
-		return (smat_fl) 0;
+		return (mat_fl)0;
 
 cerr << "Can't find " << x << endl;
 exit(33);
